@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { Component, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import Icon from './Icon'
 import { ESTADOS } from '../lib/constants'
@@ -112,4 +112,37 @@ export function Switch({ checked, onChange, id }) {
 
 export function Skeleton({ h = 80, style }) {
   return <div className="skeleton" style={{ height: h, ...style }} />
+}
+
+export class ErrorBoundary extends Component {
+  state = { hasError: false, error: null }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error('ErrorBoundary caught:', error, errorInfo)
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, textAlign: 'center', maxWidth: 500, margin: '60px auto' }} className="card">
+          <Icon name="alert" size={36} style={{ color: 'var(--amber)', margin: '0 auto 12px' }} />
+          <h2 style={{ fontSize: 18, marginBottom: 8 }}>Ocurrió un problema visual</h2>
+          <p className="faint small mb-16">
+            {this.state.error?.message || 'No se pudo renderizar este componente.'}
+          </p>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              this.setState({ hasError: false, error: null })
+              window.location.reload()
+            }}
+          >
+            Recargar página
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
 }

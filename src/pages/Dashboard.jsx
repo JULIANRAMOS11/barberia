@@ -65,7 +65,7 @@ export default function Dashboard() {
     }
     const equipoComisiones = Object.values(porEmpleado).sort((a, b) => b.comision - a.comision)
     const valorInventario = inventario.reduce((sum, p) => sum + Number(p.precio_compra || 0) * Number(p.stock_actual), 0)
-    return { ingresos, comisiones, productos, completadas, activas, porCobrar, efectivo, nequi, topServicios, bajos, proximas, days, equipoComisiones, valorInventario }
+    return { ingresos, comisiones, productos, completadas, activas, porCobrar, efectivo, transferencia, tarjeta, topServicios, bajos, proximas, days, equipoComisiones, valorInventario }
   }, [data])
 
   return <div className="animate-in dashboard-page">

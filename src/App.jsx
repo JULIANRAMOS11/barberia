@@ -2,7 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import Layout from './components/Layout'
-import { Spinner } from './components/ui'
+import { ErrorBoundary, Spinner } from './components/ui'
 import Login from './pages/Login'
 import SinPerfil from './pages/SinPerfil'
 import Dashboard from './pages/Dashboard'
@@ -45,27 +45,29 @@ export default function App() {
     <ToastProvider>
       <AuthProvider>
         <BrowserRouter>
-          <Routes>
-            {/* Ruta pública de auto-agendamiento para clientes (WhatsApp) */}
-            <Route path="/reservar" element={<ReservaPublica />} />
-            <Route path="/agendar" element={<Navigate to="/reservar" replace />} />
+          <ErrorBoundary>
+            <Routes>
+              {/* Ruta pública de auto-agendamiento para clientes (WhatsApp) */}
+              <Route path="/reservar" element={<ReservaPublica />} />
+              <Route path="/agendar" element={<Navigate to="/reservar" replace />} />
 
-            <Route path="/login" element={<LoginRoute />} />
-            <Route element={<Guard><Layout /></Guard>}>
-              <Route index element={<Home />} />
-              {/* Admin */}
-              <Route path="/dashboard" element={<Guard role="admin"><Dashboard /></Guard>} />
-              <Route path="/agenda" element={<Guard role="admin"><AgendaMaestra /></Guard>} />
-              <Route path="/caja" element={<Guard role="admin"><Caja /></Guard>} />
-              <Route path="/inventario" element={<Guard role="admin"><Inventario /></Guard>} />
-              <Route path="/reportes" element={<Guard role="admin"><Reportes /></Guard>} />
-              <Route path="/configuracion" element={<Guard role="admin"><Configuracion /></Guard>} />
-              {/* Empleados */}
-              <Route path="/mi-agenda" element={<Guard role="empleado"><MiAgenda /></Guard>} />
-              <Route path="/mis-finanzas" element={<Guard role="empleado"><MisFinanzas /></Guard>} />
-            </Route>
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+              <Route path="/login" element={<LoginRoute />} />
+              <Route element={<Guard><Layout /></Guard>}>
+                <Route index element={<Home />} />
+                {/* Admin */}
+                <Route path="/dashboard" element={<Guard role="admin"><Dashboard /></Guard>} />
+                <Route path="/agenda" element={<Guard role="admin"><AgendaMaestra /></Guard>} />
+                <Route path="/caja" element={<Guard role="admin"><Caja /></Guard>} />
+                <Route path="/inventario" element={<Guard role="admin"><Inventario /></Guard>} />
+                <Route path="/reportes" element={<Guard role="admin"><Reportes /></Guard>} />
+                <Route path="/configuracion" element={<Guard role="admin"><Configuracion /></Guard>} />
+                {/* Empleados */}
+                <Route path="/mi-agenda" element={<Guard role="empleado"><MiAgenda /></Guard>} />
+                <Route path="/mis-finanzas" element={<Guard role="empleado"><MisFinanzas /></Guard>} />
+              </Route>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </ErrorBoundary>
         </BrowserRouter>
       </AuthProvider>
     </ToastProvider>
