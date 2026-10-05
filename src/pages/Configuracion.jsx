@@ -237,7 +237,7 @@ export default function Configuracion() {
           {/* TAB 1: EQUIPO */}
           {tab === 'equipo' && (
             <div className="col" style={{ gap: 20 }}>
-              <div className="row-between">
+              <div className="row-between wrap">
                 <div>
                   <h2 style={{ fontSize: 18, fontWeight: 700 }}>Personal de Trabajo</h2>
                   <p className="faint small">
@@ -352,7 +352,7 @@ export default function Configuracion() {
           {/* TAB 2: SERVICIOS */}
           {tab === 'servicios' && (
             <div className="col" style={{ gap: 20 }}>
-              <div className="row-between">
+              <div className="row-between wrap">
                 <div>
                   <h2 style={{ fontSize: 18, fontWeight: 700 }}>Catálogo de Servicios</h2>
                   <p className="faint small">

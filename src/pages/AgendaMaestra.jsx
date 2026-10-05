@@ -157,7 +157,7 @@ export default function AgendaMaestra() {
             {resumen.porCobrar > 0 && <> · <span style={{ color: 'var(--green)' }}>{resumen.porCobrar} por cobrar</span></>}
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setModal({ initial: { empleado_id: empleadosArea[0]?.id, fecha_hora: esHoy ? new Date() : (() => { const d = new Date(day); d.setHours(HORARIO.inicio + 1); return d })() } })} id="agenda-nueva-cita">
+        <button className="btn btn-primary" disabled={!empleadosArea.length} onClick={() => setModal({ initial: { empleado_id: empleadoFiltro || empleadosArea[0]?.id, fecha_hora: esHoy ? new Date() : (() => { const d = new Date(day); d.setHours(HORARIO.inicio + 1); return d })() } })} id="agenda-nueva-cita">
           <Icon name="plus" /> Nueva cita
         </button>
       </header>

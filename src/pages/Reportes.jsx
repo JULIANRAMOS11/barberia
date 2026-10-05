@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import * as XLSX from 'xlsx'
 import Icon from '../components/Icon'
-import { Avatar, Empty, Skeleton, StatCard } from '../components/ui'
+import { Avatar, Empty, Skeleton, Spinner, StatCard } from '../components/ui'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/api'
 import { AREAS, METODOS_PAGO } from '../lib/constants'
-import { addDays, fechaCorta, fechaHora, money, startOfMonth, startOfWeek, toDateInput } from '../lib/format'
+import { addDays, fechaHora, money, startOfMonth, startOfWeek, toDateInput } from '../lib/format'
 
 export default function Reportes() {
   const toast = useToast()
@@ -17,6 +16,7 @@ export default function Reportes() {
   const [movimientos, setMovimientos] = useState([])
   const [empleados, setEmpleados] = useState([])
   const [loading, setLoading] = useState(true)
+  const [exportando, setExportando] = useState(false)
 
   // Cargar equipo para los filtros
   useEffect(() => {
@@ -123,8 +123,11 @@ export default function Reportes() {
   }, [movimientosFiltrados])
 
   // Exportar reporte a Excel (SheetJS)
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    if (exportando) return
+    setExportando(true)
     try {
+      const XLSX = await import('xlsx')
       // Hoja 1: Resumen de Comisiones por Empleado
       const datosComisiones = liquidacionPorEmpleado.map((item, idx) => ({
         '#': idx + 1,
@@ -163,6 +166,8 @@ export default function Reportes() {
       toast.success(`Archivo "${nombreArchivo}" descargado exitosamente.`)
     } catch (err) {
       toast.error('Error al exportar a Excel: ' + err.message)
+    } finally {
+      setExportando(false)
     }
   }
 
@@ -178,10 +183,10 @@ export default function Reportes() {
         <button
           className="btn btn-primary"
           onClick={exportarExcel}
-          disabled={movimientosFiltrados.length === 0}
+          disabled={loading || exportando || movimientosFiltrados.length === 0}
           id="rep-btn-excel"
         >
-          <Icon name="download" /> Exportar a Excel
+          {exportando ? <Spinner /> : <Icon name="download" />} {exportando ? 'Preparando Excel…' : 'Exportar a Excel'}
         </button>
       </header>
 
@@ -219,7 +224,7 @@ export default function Reportes() {
             </button>
           </div>
 
-          <div className="row wrap" style={{ gap: 10 }}>
+          <div className="row wrap report-filters" style={{ gap: 10 }}>
             {periodo === 'personalizado' && (
               <>
                 <input
@@ -229,6 +234,7 @@ export default function Reportes() {
                   value={desde}
                   onChange={(e) => setDesde(e.target.value)}
                   id="rep-fecha-desde"
+                  aria-label="Fecha desde"
                 />
                 <span className="faint small">a</span>
                 <input
@@ -238,6 +244,7 @@ export default function Reportes() {
                   value={hasta}
                   onChange={(e) => setHasta(e.target.value)}
                   id="rep-fecha-hasta"
+                  aria-label="Fecha hasta"
                 />
               </>
             )}
@@ -248,6 +255,7 @@ export default function Reportes() {
               value={empleadoFiltro}
               onChange={(e) => setEmpleadoFiltro(e.target.value)}
               id="rep-filtro-empleado"
+              aria-label="Filtrar por empleado"
             >
               <option value="">Todos los Empleados</option>
               {empleados.map((emp) => (
@@ -263,6 +271,7 @@ export default function Reportes() {
               value={metodoFiltro}
               onChange={(e) => setMetodoFiltro(e.target.value)}
               id="rep-filtro-metodo"
+              aria-label="Filtrar por método de pago"
             >
               <option value="">Todos los Métodos</option>
               <option value="efectivo">Solo Efectivo</option>

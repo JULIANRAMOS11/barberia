@@ -11,6 +11,9 @@ export function Modal({ open, onClose, title, subtitle, children, footer, size }
   useEffect(() => {
     if (!open) return
     const previousFocus = document.activeElement
+    const appRoot = document.getElementById('root')
+    const previousInert = appRoot?.inert
+    if (appRoot) appRoot.inert = true
     const overflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const focusable = () => Array.from(dialogRef.current?.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]') || [])
@@ -33,6 +36,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, size }
     return () => {
       window.removeEventListener('keydown', onKey)
       document.body.style.overflow = overflow
+      if (appRoot) appRoot.inert = previousInert
       if (previousFocus?.isConnected) previousFocus.focus()
     }
   }, [open])
