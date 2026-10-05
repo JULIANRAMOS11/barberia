@@ -80,6 +80,7 @@ export default function AgendaMaestra() {
 
   // Solo se cargan las columnas del área seleccionada (evita saturación visual con 14 columnas)
   const empleadosArea = useMemo(() => empleados.filter((e) => e.area === area), [empleados, area])
+  const serviciosArea = useMemo(() => servicios.filter((s) => !s.area || s.area === area), [servicios, area])
   const empleadosVisibles = empleadosArea.filter((e) => !empleadoFiltro || e.id === empleadoFiltro)
   const citasVisibles = citas
     .filter((c) => (!empleadoFiltro || c.empleado_id === empleadoFiltro) && (verCanceladas || c.estado !== 'cancelada'))
