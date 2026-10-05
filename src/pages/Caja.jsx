@@ -5,7 +5,7 @@ import { Avatar, Empty, Modal, Spinner } from '../components/ui'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/api'
 import { METODOS_PAGO } from '../lib/constants'
-import { duracion, fechaHora, hora, money } from '../lib/format'
+import { duracion, fechaHora, money } from '../lib/format'
 
 export default function Caja() {
   const toast = useToast()
@@ -32,14 +32,8 @@ export default function Caja() {
       setCitasCompletadas(citas)
       setInventario(prods.filter((p) => p.tipo === 'venta'))
 
-      if (preselectCitaId) {
-        const encontrada = citas.find((c) => c.id === preselectCitaId)
-        if (encontrada) {
-          setSelectedCita(encontrada)
-        }
-      } else if (citas.length > 0 && !selectedCita) {
-        setSelectedCita(citas[0])
-      }
+      setSelectedCita((current) => citas.find((c) => c.id === current?.id)
+        || citas.find((c) => c.id === preselectCitaId) || citas[0] || null)
     } catch (err) {
       toast.error(err)
     } finally {
@@ -185,7 +179,7 @@ export default function Caja() {
       ) : (
         <div className="caja-grid">
           {/* Columna Izquierda: Citas pendientes por cobrar */}
-          <section className="card">
+          <section className="card caja-pending">
             <div className="card-header">
               <div>
                 <h2 className="card-title">Citas por Cobrar</h2>
@@ -208,9 +202,12 @@ export default function Caja() {
                 {citasCompletadas.map((c) => {
                   const activa = selectedCita?.id === c.id
                   return (
-                    <div
+                    <button
+                      type="button"
                       key={c.id}
                       className={`pending-item ${activa ? 'active' : ''}`}
+                      aria-pressed={activa}
+                      disabled={processing}
                       onClick={() => setSelectedCita(c)}
                       id={`caja-item-${c.id}`}
                     >
@@ -220,7 +217,7 @@ export default function Caja() {
                         <div className="faint small">
                           {c.servicio?.nombre} · {c.empleado?.nombre}
                         </div>
-                        <div className="small muted mono">{hora(c.fecha_hora)}</div>
+                        <div className="small muted mono">{fechaHora(c.fecha_hora)}</div>
                       </div>
                       <div className="right">
                         <div className="mono" style={{ fontWeight: 700, color: 'var(--gold)' }}>
@@ -228,7 +225,7 @@ export default function Caja() {
                         </div>
                         <div className="faint small">{duracion(c.duracion_minutos)}</div>
                       </div>
-                    </div>
+                    </button>
                   )
                 })}
               </div>
@@ -259,7 +256,7 @@ export default function Caja() {
 
                 {/* Sección de agregar productos al cobro */}
                 <div>
-                  <div className="row-between mb-8">
+                  <div className="row-between wrap mb-8 product-search-header">
                     <div>
                       <h3 style={{ fontSize: 14, fontWeight: 600 }}>Añadir Productos de Venta</h3>
                       <p className="faint small">Resta automáticamente del inventario al procesar el pago.</p>
@@ -315,7 +312,8 @@ export default function Caja() {
                               <button
                                 type="button"
                                 onClick={() => modificarCantidad(prod, -1)}
-                                disabled={cant <= 0}
+                                disabled={processing || cant <= 0}
+                                aria-label={`Quitar una unidad de ${prod.nombre}`}
                                 id={`caja-prod-minus-${prod.id}`}
                               >
                                 -
@@ -324,7 +322,8 @@ export default function Caja() {
                               <button
                                 type="button"
                                 onClick={() => modificarCantidad(prod, 1)}
-                                disabled={sinStock || cant >= prod.stock_actual}
+                                disabled={processing || sinStock || cant >= prod.stock_actual}
+                                aria-label={`Añadir una unidad de ${prod.nombre}`}
                                 id={`caja-prod-plus-${prod.id}`}
                               >
                                 +
@@ -342,10 +341,12 @@ export default function Caja() {
                   <label className="label" style={{ marginBottom: 8, display: 'block' }}>
                     Método de Pago
                   </label>
-                  <div className="row" style={{ gap: 12 }}>
+                  <div className="row payment-methods" style={{ gap: 12 }}>
                     <button
                       type="button"
                       className={`pay-method ${metodoPago === 'efectivo' ? 'active' : ''}`}
+                      aria-pressed={metodoPago === 'efectivo'}
+                      disabled={processing}
                       onClick={() => setMetodoPago('efectivo')}
                       id="caja-metodo-efectivo"
                     >
@@ -361,6 +362,8 @@ export default function Caja() {
                     <button
                       type="button"
                       className={`pay-method ${metodoPago === 'nequi' ? 'active' : ''}`}
+                      aria-pressed={metodoPago === 'nequi'}
+                      disabled={processing}
                       onClick={() => setMetodoPago('nequi')}
                       id="caja-metodo-nequi"
                     >
@@ -418,7 +421,7 @@ export default function Caja() {
                 {/* Botón de Liquidación */}
                 <button
                   type="button"
-                  className="btn btn-primary btn-lg btn-block"
+                  className="btn btn-primary btn-lg btn-block checkout-submit"
                   onClick={handleProcesarPago}
                   disabled={processing}
                   id="caja-btn-liquidar"
