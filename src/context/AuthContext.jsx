@@ -51,4 +51,15 @@ export function AuthProvider({ children }) {
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>
 }
 
-export const useAuth = () => useContext(AuthCtx)
+const DEFAULT_AUTH = {
+  session: null,
+  profile: null,
+  loading: true,
+  isAdmin: false,
+  signIn: () => {},
+  signUp: () => {},
+  signOut: () => {},
+  refreshProfile: () => {},
+}
+
+export const useAuth = () => useContext(AuthCtx) || DEFAULT_AUTH
