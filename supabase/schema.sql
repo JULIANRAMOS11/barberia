@@ -14,9 +14,14 @@ do $$ begin
   create type rol_usuario   as enum ('admin', 'empleado');
   create type area_trabajo  as enum ('barberia', 'women');
   create type estado_cita   as enum ('pendiente', 'en_proceso', 'completada', 'pagada', 'cancelada');
-  create type metodo_pago   as enum ('efectivo', 'nequi');
-  create type tipo_producto as enum ('venta', 'consumo_interno');
+  create type metodo_pago   as enum ('efectivo', 'nequi', 'transferencia', 'tarjeta');
+  create type tipo_producto as enum ('venta', 'consumo_interno', 'herramienta');
 exception when duplicate_object then null; end $$;
+
+-- Compatibilidad para bases de datos existentes:
+alter type public.metodo_pago add value if not exists 'transferencia';
+alter type public.metodo_pago add value if not exists 'tarjeta';
+alter type public.tipo_producto add value if not exists 'herramienta';
 
 -- ---------------------------------------------------------------------
 -- 2. TENANTS
