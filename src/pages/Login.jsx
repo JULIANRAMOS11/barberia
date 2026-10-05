@@ -15,7 +15,13 @@ export default function Login() {
   const [ok, setOk] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const demoAccounts = isDemo ? api.demoAccounts() : []
+  const demoAccounts = isDemo
+    ? api.demoAccounts()
+    : [
+        { id: 'admin', email: 'admin@demo.com', password: 'Password123!', nombre: 'Administrador Demo', rol: 'admin', area: null },
+        { id: 'barbero', email: 'barbero@demo.com', password: 'Password123!', nombre: 'Carlos Barbero Demo', rol: 'empleado', area: 'barberia' },
+        { id: 'estilista', email: 'estilista@demo.com', password: 'Password123!', nombre: 'Valentina Estilista Demo', rol: 'empleado', area: 'women' },
+      ]
 
   const submit = async (e) => {
     e.preventDefault()
@@ -45,11 +51,12 @@ export default function Login() {
 
   const quick = async (acc) => {
     setEmail(acc.email)
-    setPassword('demo123')
+    const pass = acc.password || 'demo123'
+    setPassword(pass)
     setError('')
     setBusy(true)
     try {
-      await signIn(acc.email, 'demo123')
+      await signIn(acc.email, pass)
     } catch (err) {
       setError(err.message)
       setBusy(false)
@@ -116,7 +123,7 @@ export default function Login() {
             </button>
           </form>
 
-          {isDemo && mode === 'login' && (
+          {mode === 'login' && (
             <>
               <div className="divider">Cuentas de demostración</div>
               <div className="demo-accounts">
@@ -130,7 +137,11 @@ export default function Login() {
                   </button>
                 ))}
               </div>
-              <p className="faint small mt-8">Contraseña de todas las cuentas demo: <code>demo123</code></p>
+              <p className="faint small mt-8">
+                {isDemo
+                  ? 'Contraseña de todas las cuentas demo: demo123'
+                  : 'Cuentas demo listas para probar en vivo (1 clic o contraseña: Password123!)'}
+              </p>
             </>
           )}
         </div>
