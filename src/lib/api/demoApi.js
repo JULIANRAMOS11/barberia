@@ -418,4 +418,99 @@ export const demoApi = {
     if (empleadoId) rows = rows.filter((r) => r.empleado_id === empleadoId)
     return clone(rows.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map(hydrateCaja))
   },
+
+  // ---------------- Reserva Pública (WhatsApp / Clientes) ----------------
+  async getPublicCatalog() {
+    await delay(100)
+    const d = load()
+    return {
+      barberia: clone(d.barberia),
+      servicios: clone(d.servicios.filter((s) => s.activo)),
+      empleados: clone(d.usuarios.filter((u) => u.rol === 'empleado' && u.activo).map(publicUser)),
+    }
+  },
+  async getPublicDisponibilidad({ empleadoId, fecha, duracionMinutos = 30 }) {
+    await delay(100)
+    const d = load()
+    const targetDay = new Date(fecha)
+    targetDay.setHours(0, 0, 0, 0)
+    const targetDayEnd = new Date(targetDay)
+    targetDayEnd.setDate(targetDayEnd.getDate() + 1)
+
+    const citasDelDia = d.citas.filter((c) =>
+      c.empleado_id === empleadoId &&
+      c.estado !== 'cancelada' &&
+      new Date(c.fecha_hora) >= targetDay &&
+      new Date(c.fecha_hora) < targetDayEnd
+    )
+
+    const slots = []
+    const now = new Date()
+    const isToday = now.getFullYear() === targetDay.getFullYear() &&
+      now.getMonth() === targetDay.getMonth() &&
+      now.getDate() === targetDay.getDate()
+
+    // Intervalos cada 15 min de HORARIO.inicio (8h) a HORARIO.fin (20h)
+    for (let h = 8; h < 20; h++) {
+      for (const m of [0, 15, 30, 45]) {
+        const slotStart = new Date(targetDay)
+        slotStart.setHours(h, m, 0, 0)
+        const slotEnd = new Date(slotStart.getTime() + duracionMinutos * 60000)
+
+        // Limite de jornada a las 20:00
+        const limitFin = new Date(targetDay)
+        limitFin.setHours(20, 0, 0, 0)
+        if (slotEnd > limitFin) continue
+
+        // En el pasado (hoy con margen de 15 minutos)
+        if (isToday && slotStart.getTime() <= now.getTime() + 15 * 60000) continue
+
+        // Choque con otra cita del empleado
+        const choca = citasDelDia.some((c) => {
+          const cIni = new Date(c.fecha_hora).getTime()
+          const cFin = new Date(c.fecha_fin).getTime()
+          return slotStart.getTime() < cFin && slotEnd.getTime() > cIni
+        })
+
+        if (!choca) {
+          slots.push(slotStart.toISOString())
+        }
+      }
+    }
+    return slots
+  },
+  async createCitaPublica({ cliente, cliente_telefono, empleado_id, servicio_id, fecha_hora, notas }) {
+    await delay(250)
+    const d = load()
+    const serv = d.servicios.find((s) => s.id === servicio_id && s.activo)
+    if (!serv) throw new Error('Servicio no disponible')
+    const emp = d.usuarios.find((u) => u.id === empleado_id && u.activo)
+    if (!emp) throw new Error('Profesional no disponible')
+
+    const ini = new Date(fecha_hora)
+    if (ini < new Date()) {
+      throw new Error('No se pueden agendar citas en el pasado')
+    }
+
+    const row = {
+      id: uid(),
+      barberia_id: d.barberia.id,
+      cliente: cliente.trim(),
+      cliente_telefono: cliente_telefono ? cliente_telefono.trim() : null,
+      empleado_id,
+      servicio_id,
+      estado: 'pendiente',
+      fecha_hora: ini.toISOString(),
+      duracion_minutos: serv.duracion_minutos,
+      fecha_fin: new Date(ini.getTime() + serv.duracion_minutos * 60000).toISOString(),
+      precio: serv.precio,
+      notas: notas ? notas.trim() : null,
+      created_at: new Date().toISOString(),
+    }
+
+    validarSolapamiento(row)
+    d.citas.push(row)
+    save()
+    return clone(hydrateCita(row))
+  },
 }

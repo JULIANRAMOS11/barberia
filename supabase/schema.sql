@@ -418,3 +418,70 @@ revoke all on function public.procesar_pago(uuid, metodo_pago, jsonb) from publi
 grant execute on function public.procesar_pago(uuid, metodo_pago, jsonb) to authenticated;
 revoke all on function public.cambiar_estado_mi_cita(uuid, estado_cita) from public, anon;
 grant execute on function public.cambiar_estado_mi_cita(uuid, estado_cita) to authenticated;
+
+-- ---------------------------------------------------------------------
+-- 13. AUTO-AGENDAMIENTO PÚBLICO (Link de WhatsApp para Clientes)
+--     Permite a clientes reservar sin cuenta, asegurando que no se
+--     solapen citas y bloqueando la duración exacta del servicio.
+-- ---------------------------------------------------------------------
+create or replace function public.crear_cita_publica(
+  p_barberia_id       uuid,
+  p_empleado_id       uuid,
+  p_servicio_id       uuid,
+  p_cliente           text,
+  p_cliente_telefono  text,
+  p_fecha_hora        timestamptz,
+  p_notas             text default null
+) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_serv servicios;
+  v_emp  usuarios;
+  v_cita citas;
+begin
+  if p_cliente is null or trim(p_cliente) = '' then
+    raise exception 'El nombre del cliente es obligatorio';
+  end if;
+
+  select * into v_serv from servicios where id = p_servicio_id and barberia_id = p_barberia_id and activo;
+  if not found then raise exception 'Servicio no disponible'; end if;
+
+  select * into v_emp from usuarios where id = p_empleado_id and barberia_id = p_barberia_id and activo and rol = 'empleado';
+  if not found then raise exception 'Profesional no disponible'; end if;
+
+  if p_fecha_hora < now() then
+    raise exception 'No se pueden agendar citas en fechas u horas pasadas';
+  end if;
+
+  insert into citas (
+    barberia_id, cliente, cliente_telefono, empleado_id, servicio_id,
+    estado, fecha_hora, duracion_minutos, fecha_fin, precio, notas
+  ) values (
+    p_barberia_id, trim(p_cliente), trim(p_cliente_telefono), v_emp.id, v_serv.id,
+    'pendiente', p_fecha_hora, v_serv.duracion_minutos,
+    p_fecha_hora + make_interval(mins => v_serv.duracion_minutos), v_serv.precio, p_notas
+  ) returning * into v_cita;
+
+  return jsonb_build_object(
+    'id', v_cita.id,
+    'cliente', v_cita.cliente,
+    'fecha_hora', v_cita.fecha_hora,
+    'duracion_minutos', v_cita.duracion_minutos,
+    'precio', v_cita.precio,
+    'empleado', v_emp.nombre,
+    'servicio', v_serv.nombre
+  );
+end $$;
+
+grant execute on function public.crear_cita_publica(uuid, uuid, uuid, text, text, timestamptz, text) to anon, authenticated;
+
+-- Políticas públicas para que la página de reservas lea el catálogo
+drop policy if exists servicios_public_read on public.servicios;
+create policy servicios_public_read on public.servicios for select to anon using (activo = true);
+
+drop policy if exists usuarios_public_read on public.usuarios;
+create policy usuarios_public_read on public.usuarios for select to anon using (activo = true and rol = 'empleado');
+
+drop policy if exists citas_public_availability on public.citas;
+create policy citas_public_availability on public.citas for select to anon using (estado <> 'cancelada');
+

@@ -13,6 +13,7 @@ import Reportes from './pages/Reportes'
 import Configuracion from './pages/Configuracion'
 import MiAgenda from './pages/MiAgenda'
 import MisFinanzas from './pages/MisFinanzas'
+import ReservaPublica from './pages/ReservaPublica'
 
 const homeFor = (profile) => (profile?.rol === 'admin' ? '/dashboard' : '/mi-agenda')
 
@@ -45,6 +46,10 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter>
           <Routes>
+            {/* Ruta pública de auto-agendamiento para clientes (WhatsApp) */}
+            <Route path="/reservar" element={<ReservaPublica />} />
+            <Route path="/agendar" element={<Navigate to="/reservar" replace />} />
+
             <Route path="/login" element={<LoginRoute />} />
             <Route element={<Guard><Layout /></Guard>}>
               <Route index element={<Home />} />
@@ -66,3 +71,4 @@ export default function App() {
     </ToastProvider>
   )
 }
+

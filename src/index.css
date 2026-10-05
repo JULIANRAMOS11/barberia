@@ -929,3 +929,129 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.8); cur
   .inventory-alert-row { padding: 10px; font-size: 12px; }
   .preview-caption a { min-height: 32px; }
 }
+
+/* ---------------------------------------------------------------------
+   RESERVA PÚBLICA (Auto-agendamiento por WhatsApp)
+   --------------------------------------------------------------------- */
+.reserva-publica-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 500px at 50% -10%, hsla(40, 70%, 50%, 0.12), transparent 70%),
+    radial-gradient(800px 400px at 10% 100%, hsla(340, 70%, 55%, 0.08), transparent 70%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  padding-bottom: 60px;
+}
+
+.reserva-header {
+  position: sticky; top: 0; z-index: 20;
+  background: rgba(14, 14, 18, 0.88);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 20px;
+}
+.reserva-header-inner {
+  max-width: 900px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+}
+
+.reserva-container {
+  max-width: 860px; margin: 28px auto 0; padding: 0 16px;
+}
+
+/* Steps progress bar */
+.reserva-steps-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 12px 18px;
+}
+.reserva-step-item {
+  display: flex; align-items: center; gap: 8px; cursor: pointer; opacity: 0.45;
+  transition: opacity 0.2s, color 0.2s;
+}
+.reserva-step-item.active { opacity: 1; }
+.reserva-step-item .step-num {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center; font-weight: 700; font-size: 12px;
+  background: var(--surface-2); color: var(--text-2);
+}
+.reserva-step-item.active .step-num {
+  background: var(--gold-grad); color: #1a1205;
+}
+.reserva-step-item .step-label { font-size: 13px; font-weight: 600; }
+
+@media (max-width: 600px) {
+  .reserva-step-item .step-label { display: none; }
+}
+
+/* Grid de servicios */
+.reserva-services-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px;
+}
+.reserva-service-card {
+  padding: 16px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--border);
+  cursor: pointer; transition: all 0.2s var(--ease);
+}
+.reserva-service-card:hover {
+  transform: translateY(-2px); border-color: hsla(40, 72%, 60%, 0.4);
+  background: var(--surface-2);
+}
+.reserva-service-card.selected {
+  border-color: var(--gold); background: var(--gold-soft);
+  box-shadow: 0 0 0 2px var(--gold);
+}
+
+/* Grid de profesionales */
+.reserva-staff-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px;
+}
+.reserva-staff-card {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 20px 14px 14px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--border);
+  cursor: pointer; transition: all 0.2s var(--ease);
+}
+.reserva-staff-card:hover {
+  transform: translateY(-2px); border-color: hsla(40, 72%, 60%, 0.4);
+  background: var(--surface-2);
+}
+.reserva-staff-card.selected {
+  border-color: var(--gold); background: var(--gold-soft);
+}
+
+/* Tira de días y horas */
+.reserva-days-strip {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; overflow-x: auto;
+}
+.reserva-slots-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px;
+}
+.slot-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  height: 42px; border-radius: var(--radius);
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums;
+  cursor: pointer; transition: all 0.15s var(--ease);
+}
+.slot-btn:hover {
+  background: var(--gold-soft); border-color: var(--gold); color: var(--gold);
+  transform: scale(1.02);
+}
+.slot-btn.selected {
+  background: var(--gold-grad); border-color: transparent; color: #1a1205;
+  box-shadow: 0 6px 18px -4px hsla(40, 80%, 55%, 0.6);
+}
+
+/* Éxito */
+.reserva-success-card {
+  max-width: 540px; margin: 0 auto; padding: 32px 24px;
+}
+.success-icon-wrap {
+  width: 76px; height: 76px; border-radius: 50%;
+  display: grid; place-items: center; margin: 0 auto 18px;
+  background: var(--green-soft); color: var(--green);
+  box-shadow: 0 0 30px hsla(152, 58%, 52%, 0.25);
+}
+

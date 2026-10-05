@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import Icon from './Icon'
 import { Avatar, Modal } from './ui'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import { api, isDemo } from '../lib/api'
 import { AREAS } from '../lib/constants'
 
@@ -22,9 +23,11 @@ const EMPLEADO_NAV = [
 
 export default function Layout() {
   const { profile, isAdmin, signOut } = useAuth()
+  const toast = useToast()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const nav = isAdmin ? ADMIN_NAV : EMPLEADO_NAV
   const mobileNav = isAdmin ? nav.slice(0, 4) : nav
 
@@ -72,6 +75,16 @@ export default function Layout() {
         ))}</nav>
 
         <div className="sidebar-footer">
+          <button
+            type="button"
+            className="btn btn-primary btn-sm btn-block"
+            onClick={() => setShareOpen(true)}
+            id="btn-compartir-whatsapp"
+            style={{ marginBottom: 4 }}
+          >
+            <Icon name="smartphone" /> Link para Clientes
+          </button>
+
           {isDemo && (
             <button className="btn btn-ghost btn-sm" onClick={reiniciarDemo} id="reset-demo">
               <Icon name="refresh" /> Reiniciar demo
@@ -126,6 +139,92 @@ export default function Layout() {
           ))}
         </nav>
         {isDemo && <button className="btn btn-ghost btn-block mt-16" onClick={reiniciarDemo}><Icon name="refresh" /> Reiniciar demostración</button>}
+      </Modal>
+
+      {/* Modal para Compartir Link por WhatsApp */}
+      <Modal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        title="Link de Reservas para Clientes"
+        subtitle="Comparte este enlace por WhatsApp o redes sociales para que tus clientes agenden su cita."
+      >
+        <div className="col" style={{ gap: 18 }}>
+          {/* Enlace general del local */}
+          <div className="field">
+            <label className="label">Enlace General del Negocio</label>
+            <div className="row" style={{ gap: 8 }}>
+              <input
+                className="input input-sm mono"
+                readOnly
+                value={`${window.location.origin}/reservar`}
+                onClick={(e) => e.target.select()}
+              />
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/reservar`)
+                  toast.success('¡Enlace general copiado al portapapeles!')
+                }}
+              >
+                Copiar
+              </button>
+            </div>
+          </div>
+
+          {/* Enlace personal si es empleado */}
+          {!isAdmin && profile?.id && (
+            <div className="field">
+              <label className="label">Tu Enlace Directo Personal</label>
+              <div className="row" style={{ gap: 8 }}>
+                <input
+                  className="input input-sm mono"
+                  readOnly
+                  value={`${window.location.origin}/reservar?barbero=${profile.id}`}
+                  onClick={(e) => e.target.select()}
+                />
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/reservar?barbero=${profile.id}`)
+                    toast.success('¡Tu enlace personal fue copiado!')
+                  }}
+                >
+                  Copiar
+                </button>
+              </div>
+              <p className="faint small mt-4">
+                Tus clientes entrarán con tu perfil ya seleccionado automáticamente.
+              </p>
+            </div>
+          )}
+
+          {/* Acciones directas */}
+          <div className="row wrap mt-8" style={{ gap: 10 }}>
+            <a
+              href={`https://wa.me/?text=${encodeURIComponent(
+                `¡Hola! 👋 Puedes agendar tu cita en ${profile?.barberia?.nombre || 'nuestro local'} directamente aquí: ${
+                  window.location.origin
+                }/reservar${!isAdmin && profile?.id ? `?barbero=${profile.id}` : ''}`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-success grow"
+            >
+              <Icon name="smartphone" /> Enviar por WhatsApp
+            </a>
+
+            <a
+              href={`${window.location.origin}/reservar${!isAdmin && profile?.id ? `?barbero=${profile.id}` : ''}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-ghost"
+            >
+              Ver página <Icon name="chevronRight" />
+            </a>
+          </div>
+        </div>
       </Modal>
     </div>
   )

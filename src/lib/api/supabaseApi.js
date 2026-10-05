@@ -162,4 +162,78 @@ export const supabaseApi = {
     if (empleadoId) q = q.eq('empleado_id', empleadoId)
     return check(await q)
   },
+
+  // ---------------- Reserva Pública (WhatsApp / Clientes) ----------------
+  async getPublicCatalog() {
+    const [barberias, servicios, empleados] = await Promise.all([
+      supabase.from('barberias').select('id, nombre').limit(1).maybeSingle(),
+      supabase.from('servicios').select('*').eq('activo', true).order('nombre'),
+      supabase.from('usuarios').select('id, nombre, area').eq('rol', 'empleado').eq('activo', true).order('nombre'),
+    ])
+    return {
+      barberia: check(barberias),
+      servicios: check(servicios),
+      empleados: check(empleados),
+    }
+  },
+  async getPublicDisponibilidad({ empleadoId, fecha, duracionMinutos = 30 }) {
+    const targetDay = new Date(fecha)
+    targetDay.setHours(0, 0, 0, 0)
+    const targetDayEnd = new Date(targetDay)
+    targetDayEnd.setDate(targetDayEnd.getDate() + 1)
+
+    const citas = check(
+      await supabase
+        .from('citas')
+        .select('fecha_hora, fecha_fin')
+        .eq('empleado_id', empleadoId)
+        .neq('estado', 'cancelada')
+        .gte('fecha_hora', targetDay.toISOString())
+        .lt('fecha_hora', targetDayEnd.toISOString())
+    )
+
+    const slots = []
+    const now = new Date()
+    const isToday = now.getFullYear() === targetDay.getFullYear() &&
+      now.getMonth() === targetDay.getMonth() &&
+      now.getDate() === targetDay.getDate()
+
+    for (let h = 8; h < 20; h++) {
+      for (const m of [0, 15, 30, 45]) {
+        const slotStart = new Date(targetDay)
+        slotStart.setHours(h, m, 0, 0)
+        const slotEnd = new Date(slotStart.getTime() + duracionMinutos * 60000)
+
+        const limitFin = new Date(targetDay)
+        limitFin.setHours(20, 0, 0, 0)
+        if (slotEnd > limitFin) continue
+
+        if (isToday && slotStart.getTime() <= now.getTime() + 15 * 60000) continue
+
+        const choca = citas.some((c) => {
+          const cIni = new Date(c.fecha_hora).getTime()
+          const cFin = new Date(c.fecha_fin).getTime()
+          return slotStart.getTime() < cFin && slotEnd.getTime() > cIni
+        })
+
+        if (!choca) {
+          slots.push(slotStart.toISOString())
+        }
+      }
+    }
+    return slots
+  },
+  async createCitaPublica({ barberia_id, cliente, cliente_telefono, empleado_id, servicio_id, fecha_hora, notas }) {
+    return check(
+      await supabase.rpc('crear_cita_publica', {
+        p_barberia_id: barberia_id,
+        p_empleado_id: empleado_id,
+        p_servicio_id: servicio_id,
+        p_cliente: cliente,
+        p_cliente_telefono: cliente_telefono || null,
+        p_fecha_hora: new Date(fecha_hora).toISOString(),
+        p_notas: notas || null,
+      })
+    )
+  },
 }
