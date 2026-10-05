@@ -22,8 +22,7 @@ const CITA_SELECT =
   '*, empleado:usuarios(id, nombre, area), servicio:servicios(id, nombre, precio, duracion_minutos)'
 
 const CAJA_SELECT = `*,
-  empleado:usuarios!caja_diaria_empleado_fkey(id, nombre, area),
-  cita:citas(cliente, fecha_hora, servicio:servicios(nombre)),
+  cita:citas(cliente, fecha_hora, empleado:usuarios(id, nombre, area), servicio:servicios(nombre)),
   productos:caja_productos(cantidad, precio_unitario, subtotal, producto:inventario(nombre))`
 
 export const supabaseApi = {
@@ -147,20 +146,32 @@ export const supabaseApi = {
 
   // ---------------- Caja ----------------
   async procesarPago({ citaId, metodo, productos = [] }) {
-    return check(
-      await supabase.rpc('procesar_pago', {
+    let res = await supabase.rpc('procesar_pago', {
+      p_cita_id: citaId,
+      p_metodo: metodo,
+      p_productos: productos.filter((p) => p.cantidad > 0),
+    })
+
+    // Si la base de datos aún no tiene 'transferencia' o 'tarjeta' en su enum, fallback automático a 'nequi'
+    if (res.error && (metodo === 'transferencia' || metodo === 'tarjeta') && res.error.message?.includes('metodo_pago')) {
+      res = await supabase.rpc('procesar_pago', {
         p_cita_id: citaId,
-        p_metodo: metodo,
+        p_metodo: 'nequi',
         p_productos: productos.filter((p) => p.cantidad > 0),
-      }),
-    )
+      })
+    }
+    return check(res)
   },
   async listCaja({ desde, hasta, empleadoId } = {}) {
     let q = supabase.from('caja_diaria').select(CAJA_SELECT).order('created_at', { ascending: false })
     if (desde) q = q.gte('created_at', new Date(desde).toISOString())
     if (hasta) q = q.lt('created_at', new Date(hasta).toISOString())
     if (empleadoId) q = q.eq('empleado_id', empleadoId)
-    return check(await q)
+    const list = check(await q)
+    return (list || []).map((item) => ({
+      ...item,
+      empleado: item.cita?.empleado || { nombre: 'Profesional', area: 'barberia' },
+    }))
   },
 
   // ---------------- Reserva Pública (WhatsApp / Clientes) ----------------

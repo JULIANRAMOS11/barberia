@@ -19,18 +19,50 @@ export function RevenueChart({ days }) {
   </div>
 }
 
-export function PaymentDonut({ efectivo, nequi }) {
-  const total = efectivo + nequi
-  const cashPercent = total ? Math.round(efectivo / total * 100) : 0
-  return <div className="payment-chart">
-    <div className="payment-donut" role="img" aria-label={total ? `Efectivo ${cashPercent}%, Nequi ${100 - cashPercent}%` : 'Sin cobros hoy'}
-      style={{ background: total ? `conic-gradient(var(--gold) 0 ${cashPercent}%, var(--teal) ${cashPercent}% 100%)` : 'var(--border-strong)' }}>
-      <div><Icon name="wallet" size={20} /><span>{total ? 'Hoy' : 'Sin cobros'}</span></div>
+export function PaymentDonut({ efectivo = 0, transferencia = 0, tarjeta = 0 }) {
+  const total = efectivo + transferencia + tarjeta
+  const pCash = total ? Math.round((efectivo / total) * 100) : 0
+  const pTrans = total ? Math.round((transferencia / total) * 100) : 0
+  const pCard = total ? Math.max(0, 100 - pCash - pTrans) : 0
+
+  const grad = total
+    ? `conic-gradient(
+        var(--gold) 0 ${pCash}%,
+        var(--teal) ${pCash}% ${pCash + pTrans}%,
+        hsl(210, 100%, 72%) ${pCash + pTrans}% 100%
+      )`
+    : 'var(--border-strong)'
+
+  return (
+    <div className="payment-chart">
+      <div
+        className="payment-donut"
+        role="img"
+        aria-label={total ? `Efectivo ${pCash}%, Transferencia ${pTrans}%, Tarjeta ${pCard}%` : 'Sin cobros hoy'}
+        style={{ background: grad }}
+      >
+        <div>
+          <Icon name="wallet" size={20} />
+          <span>{total ? 'Hoy' : 'Sin cobros'}</span>
+        </div>
+      </div>
+      <div className="payment-legend">
+        {[
+          { label: 'Efectivo', total: efectivo, percent: pCash, color: 'var(--gold)' },
+          { label: 'Transferencia', total: transferencia, percent: pTrans, color: 'var(--teal)' },
+          { label: 'Tarjeta', total: tarjeta, percent: pCard, color: 'hsl(210, 100%, 72%)' },
+        ].map((m) => (
+          <div key={m.label}>
+            <span>
+              <i style={{ background: m.color }} />
+              {m.label} <b>{m.percent}%</b>
+            </span>
+            <strong className="mono">{money(m.total)}</strong>
+          </div>
+        ))}
+      </div>
     </div>
-    <div className="payment-legend">
-      {[{ label: 'Efectivo', total: efectivo, percent: cashPercent, color: 'var(--gold)' }, { label: 'Nequi', total: nequi, percent: total ? 100 - cashPercent : 0, color: 'var(--teal)' }].map((m) => <div key={m.label}><span><i style={{ background: m.color }} />{m.label}<b>{m.percent}%</b></span><strong className="mono">{money(m.total)}</strong></div>)}
-    </div>
-  </div>
+  )
 }
 
 export function SchedulePreview({ citas, empleados, now }) {

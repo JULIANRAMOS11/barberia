@@ -3,8 +3,9 @@ import { useSearchParams } from 'react-router-dom'
 import Icon from '../components/Icon'
 import { Avatar, Empty, Spinner } from '../components/ui'
 import { api } from '../lib/api'
-import { AREAS } from '../lib/constants'
+import { AREAS, DIAS_SEMANA, HORARIO, REDES_SOCIALES } from '../lib/constants'
 import { addDays, duracion, fechaCorta, fechaLarga, hora, money, sameDay, startOfDay } from '../lib/format'
+import { esDiaDescanso, getEmpleadoHorario } from '../lib/horarios'
 
 export default function ReservaPublica() {
   const [searchParams] = useSearchParams()
@@ -73,8 +74,15 @@ export default function ReservaPublica() {
   useEffect(() => {
     if (!empleadoSeleccionado || !fechaSeleccionada || !servicioSeleccionado) return
 
-    setCargandoSlots(true)
     setHoraSeleccionada(null)
+
+    if (esDiaDescanso(empleadoSeleccionado, fechaSeleccionada)) {
+      setSlotsDisponibles([])
+      setCargandoSlots(false)
+      return
+    }
+
+    setCargandoSlots(true)
     api.getPublicDisponibilidad({
       empleadoId: empleadoSeleccionado.id,
       fecha: fechaSeleccionada,
@@ -142,11 +150,56 @@ export default function ReservaPublica() {
               <Icon name="scissors" size={20} />
             </div>
             <div>
-              <strong style={{ fontSize: 18, color: '#fff' }}>{catalogo.barberia?.nombre || 'BarberOS'}</strong>
+              <strong style={{ fontSize: 18, color: '#fff' }}>{catalogo.barberia?.nombre || 'Elite Barber Studio'}</strong>
               <div className="faint small">Agenda tu cita online en 1 minuto</div>
             </div>
           </div>
-          <span className="badge badge-gold no-dot hidden-mobile">Atención 8:00 AM – 8:00 PM</span>
+
+          <div className="row" style={{ gap: 12 }}>
+            <span className="badge badge-gold no-dot hidden-mobile">Atención 9:00 AM – 9:00 PM</span>
+            <div className="reserva-socials-bar">
+              <a
+                href={REDES_SOCIALES.instagram}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="social-btn social-ig"
+                title="Síguenos en Instagram"
+              >
+                <Icon name="instagram" size={15} />
+                <span className="hidden-mobile">Instagram</span>
+              </a>
+              <a
+                href={REDES_SOCIALES.tiktok}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="social-btn social-tk"
+                title="Síguenos en TikTok"
+              >
+                <Icon name="tiktok" size={15} />
+                <span className="hidden-mobile">TikTok</span>
+              </a>
+              <a
+                href={REDES_SOCIALES.facebook}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="social-btn social-fb"
+                title="Facebook"
+              >
+                <Icon name="facebook" size={15} />
+                <span className="hidden-mobile">Facebook</span>
+              </a>
+              <a
+                href={REDES_SOCIALES.whatsapp}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="social-btn social-wa"
+                title="WhatsApp Directo"
+              >
+                <Icon name="whatsapp" size={15} />
+                <span className="hidden-mobile">WhatsApp</span>
+              </a>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -344,9 +397,19 @@ export default function ReservaPublica() {
                         <Avatar nombre={emp.nombre} area={emp.area} size="lg" />
                         <div style={{ textAlign: 'center', marginTop: 10 }}>
                           <strong style={{ display: 'block', fontSize: 15 }}>{emp.nombre}</strong>
-                          <span className={`badge ${emp.area === 'women' ? 'badge-rose' : 'badge-gold'} no-dot mt-8`}>
-                            {AREAS[emp.area]?.label || emp.area}
-                          </span>
+                          <div className="row" style={{ justifyContent: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                            <span className={`badge ${emp.area === 'women' ? 'badge-rose' : 'badge-gold'} no-dot`}>
+                              {AREAS[emp.area]?.label || emp.area}
+                            </span>
+                            {(() => {
+                              const h = getEmpleadoHorario(emp)
+                              return (
+                                <span className="badge badge-en_proceso no-dot" style={{ fontSize: 10 }}>
+                                  🏖️ {h.diaNombre}
+                                </span>
+                              )
+                            })()}
+                          </div>
                         </div>
                         <button
                           type="button"
@@ -383,16 +446,24 @@ export default function ReservaPublica() {
                     const seleccionado = sameDay(dia, fechaSeleccionada)
                     const esHoy = sameDay(dia, new Date())
                     const dow = dia.toLocaleDateString('es-CO', { weekday: 'short' })
+                    const esDescanso = empleadoSeleccionado && esDiaDescanso(empleadoSeleccionado, dia)
                     return (
                       <button
                         key={idx}
                         type="button"
                         className={`day-pill ${seleccionado ? 'active' : ''} ${esHoy ? 'today' : ''}`}
                         onClick={() => setFechaSeleccionada(dia)}
+                        style={esDescanso ? { borderColor: 'rgba(234, 179, 8, 0.4)' } : {}}
                       >
                         <span className="dow">{dow}</span>
                         <span className="dnum">{dia.getDate()}</span>
-                        <span className="small faint">{dia.toLocaleDateString('es-CO', { month: 'short' })}</span>
+                        {esDescanso ? (
+                          <span className="badge badge-en_proceso no-dot" style={{ fontSize: 9, padding: '1px 3px' }}>
+                            Descanso
+                          </span>
+                        ) : (
+                          <span className="small faint">{dia.toLocaleDateString('es-CO', { month: 'short' })}</span>
+                        )}
                       </button>
                     )
                   })}
@@ -410,6 +481,28 @@ export default function ReservaPublica() {
                   {cargandoSlots ? (
                     <div style={{ padding: '24px 0', textAlign: 'center' }}>
                       <span className="faint small">Calculando disponibilidad en tiempo real…</span>
+                    </div>
+                  ) : esDiaDescanso(empleadoSeleccionado, fechaSeleccionada) ? (
+                    <div
+                      style={{
+                        padding: '28px 16px',
+                        textAlign: 'center',
+                        borderRadius: 'var(--radius)',
+                        background: 'rgba(234, 179, 8, 0.08)',
+                        border: '1px solid rgba(234, 179, 8, 0.3)',
+                      }}
+                    >
+                      <div style={{ fontSize: 32, marginBottom: 8 }}>🏖️</div>
+                      <strong style={{ fontSize: 16, display: 'block', color: 'var(--amber)' }}>
+                        {empleadoSeleccionado?.nombre} está en su día de descanso semanal
+                      </strong>
+                      <p className="faint small mt-8" style={{ maxWidth: 460, margin: '8px auto 16px', lineHeight: 1.5 }}>
+                        Los <strong>{getEmpleadoHorario(empleadoSeleccionado).diaNombre}</strong> son el día libre programado de este profesional.
+                        Puedes seleccionar otro día en la barra superior o reservar hoy con otro miembro de nuestro equipo.
+                      </p>
+                      <button className="btn btn-outline btn-sm" onClick={() => setPaso(2)}>
+                        <Icon name="scissors" /> Ver otros profesionales disponibles
+                      </button>
                     </div>
                   ) : slotsDisponibles.length === 0 ? (
                     <Empty icon="clock" title="No hay turnos disponibles para esta fecha">
@@ -536,6 +629,40 @@ export default function ReservaPublica() {
           </div>
         )}
       </main>
+
+      {/* Pie de Página con Redes Sociales y Datos de Contacto */}
+      <footer className="reserva-footer">
+        <div className="reserva-footer-inner">
+          <div className="reserva-footer-brand">
+            <div className="brand-logo" style={{ width: 32, height: 32 }}>
+              <Icon name="scissors" size={17} />
+            </div>
+            <strong>{catalogo.barberia?.nombre || 'Elite Barber Studio'}</strong>
+          </div>
+          <p className="faint small text-center" style={{ maxWidth: 520 }}>
+            Barbería Profesional & Zona Women · Síguenos en nuestras redes sociales para ver las fotos y videos de nuestros mejores cortes y diseños.
+          </p>
+
+          <div className="row wrap" style={{ gap: 10, justifyContent: 'center' }}>
+            <a href={REDES_SOCIALES.instagram} target="_blank" rel="noopener noreferrer" className="social-pill ig">
+              <Icon name="instagram" size={15} /> @elitebarberstudio
+            </a>
+            <a href={REDES_SOCIALES.tiktok} target="_blank" rel="noopener noreferrer" className="social-pill tk">
+              <Icon name="tiktok" size={15} /> @elitebarberstudio
+            </a>
+            <a href={REDES_SOCIALES.facebook} target="_blank" rel="noopener noreferrer" className="social-pill fb">
+              <Icon name="facebook" size={15} /> Facebook Oficial
+            </a>
+            <a href={REDES_SOCIALES.whatsapp} target="_blank" rel="noopener noreferrer" className="social-pill wa">
+              <Icon name="whatsapp" size={15} /> WhatsApp: {REDES_SOCIALES.telefono}
+            </a>
+          </div>
+
+          <div className="faint small text-center mt-12">
+            Horario continuo de 9:00 AM a 9:00 PM · Atendemos con cita online y clientes de paso.
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }

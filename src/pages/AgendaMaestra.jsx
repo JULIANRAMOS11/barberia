@@ -8,6 +8,7 @@ import { useToast } from '../context/ToastContext'
 import { api } from '../lib/api'
 import { AREAS, HORARIO, MIN_TIEMPO_MUERTO, SLOT_MIN } from '../lib/constants'
 import { addDays, duracion, fechaLarga, hora, horaCorta, money, sameDay, startOfDay } from '../lib/format'
+import { esDiaDescanso, getEmpleadoHorario } from '../lib/horarios'
 
 const SLOT_H = 22 // px por cada 15 min (sincronizado con --slot-h)
 const PX_MIN = SLOT_H / SLOT_MIN
@@ -55,6 +56,14 @@ export default function AgendaMaestra() {
   const isMobile = useMediaQuery('(max-width: 820px)')
   const [vistaElegida, setVistaElegida] = useState(null)
   const [empleadoFiltro, setEmpleadoFiltro] = useState('')
+  const [modalWalkIn, setModalWalkIn] = useState(false)
+  const [walkInForm, setWalkInForm] = useState({
+    cliente: 'Cliente de Paso',
+    cliente_telefono: '',
+    servicio_id: '',
+    empleado_id: '',
+    notas: 'Atención inmediata sin cita previa',
+  })
   const vista = vistaElegida || (isMobile ? 'lista' : 'calendario')
 
   useEffect(() => {
@@ -157,9 +166,36 @@ export default function AgendaMaestra() {
             {resumen.porCobrar > 0 && <> · <span style={{ color: 'var(--green)' }}>{resumen.porCobrar} por cobrar</span></>}
           </p>
         </div>
-        <button className="btn btn-primary" disabled={!empleadosArea.length} onClick={() => setModal({ initial: { empleado_id: empleadoFiltro || empleadosArea[0]?.id, fecha_hora: esHoy ? new Date() : (() => { const d = new Date(day); d.setHours(HORARIO.inicio + 1); return d })() } })} id="agenda-nueva-cita">
-          <Icon name="plus" /> Nueva cita
-        </button>
+        <div className="row wrap" style={{ gap: 10 }}>
+          <button
+            className="btn btn-outline"
+            style={{ borderColor: 'var(--amber)', color: 'var(--amber)' }}
+            disabled={!empleadosArea.length}
+            onClick={() => {
+              const defaultEmp = empleadoFiltro || empleadosArea[0]?.id || ''
+              const defaultServ = serviciosArea[0]?.id || ''
+              setWalkInForm({
+                cliente: 'Cliente de Paso',
+                cliente_telefono: '',
+                servicio_id: defaultServ,
+                empleado_id: defaultEmp,
+                notas: 'Atención inmediata sin cita previa',
+              })
+              setModalWalkIn(true)
+            }}
+            id="agenda-walk-in"
+          >
+            <Icon name="play" /> + Cliente sin Cita (Paso)
+          </button>
+          <button
+            className="btn btn-primary"
+            disabled={!empleadosArea.length}
+            onClick={() => setModal({ initial: { empleado_id: empleadoFiltro || empleadosArea[0]?.id, fecha_hora: esHoy ? new Date() : (() => { const d = new Date(day); d.setHours(HORARIO.inicio + 1); return d })() } })}
+            id="agenda-nueva-cita"
+          >
+            <Icon name="plus" /> Nueva cita
+          </button>
+        </div>
       </header>
 
       <div className="agenda-toolbar">
@@ -244,13 +280,25 @@ export default function AgendaMaestra() {
           {empleadosVisibles.map((e) => {
             const { libre } = calcularHuecos(porEmpleado[e.id] ?? [], day)
             const n = (porEmpleado[e.id] ?? []).filter((c) => c.estado !== 'cancelada').length
+            const descansando = esDiaDescanso(e, day)
             return (
-              <div className="emp-head" key={e.id}>
+              <div className="emp-head" key={e.id} style={descansando ? { background: 'rgba(234, 179, 8, 0.05)' } : {}}>
                 <Avatar nombre={e.nombre} area={e.area} />
                 <div style={{ minWidth: 0 }}>
-                  <div className="name">{e.nombre}</div>
+                  <div className="name row" style={{ gap: 4, alignItems: 'center' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.nombre}</span>
+                    {descansando && (
+                      <span className="badge badge-en_proceso no-dot" style={{ fontSize: 9, padding: '1px 4px' }}>
+                        🏖️ Descanso
+                      </span>
+                    )}
+                  </div>
                   <div className="meta">
-                    {n} citas · <span className="idle">libre {duracion(libre)}</span>
+                    {descansando ? (
+                      <span className="faint small" style={{ color: 'var(--amber)' }}>Descanso semanal</span>
+                    ) : (
+                      <>{n} citas · <span className="idle">libre {duracion(libre)}</span></>
+                    )}
                   </div>
                 </div>
               </div>
@@ -371,6 +419,156 @@ export default function AgendaMaestra() {
         servicios={servicios}
         initial={modal?.initial}
       />
+
+      {/* Modal Cliente sin Cita / De Paso (Walk-in) */}
+      <Modal
+        open={modalWalkIn}
+        onClose={() => setModalWalkIn(false)}
+        title="Atender Cliente sin Cita (Walk-in)"
+        subtitle="Registra inmediatamente una atención presencial para un cliente que acaba de entrar."
+      >
+        <div className="col" style={{ gap: 16 }}>
+          <div className="field">
+            <label className="label">1. ¿Quién lo atiende?</label>
+            <div className="grid grid-2" style={{ gap: 8 }}>
+              {empleadosArea.map((emp) => {
+                const citaActual = citas.find(
+                  (c) =>
+                    c.empleado_id === emp.id &&
+                    c.estado !== 'cancelada' &&
+                    new Date(c.fecha_hora) <= now &&
+                    new Date(c.fecha_fin) > now
+                )
+                const ocupado = Boolean(citaActual)
+                const selected = walkInForm.empleado_id === emp.id
+                return (
+                  <div
+                    key={emp.id}
+                    className={`walkin-staff-card ${selected ? 'selected' : ''}`}
+                    onClick={() => setWalkInForm({ ...walkInForm, empleado_id: emp.id })}
+                  >
+                    <div className="row" style={{ gap: 8 }}>
+                      <Avatar nombre={emp.nombre} area={emp.area} size={32} />
+                      <div>
+                        <strong style={{ fontSize: 13 }}>{emp.nombre}</strong>
+                        <div className="faint small" style={{ color: ocupado ? 'var(--amber)' : 'var(--green)' }}>
+                          {ocupado ? `Ocupado hasta ${hora(citaActual.fecha_fin)}` : '● Disponible ahora'}
+                        </div>
+                      </div>
+                    </div>
+                    {selected && <Icon name="check" size={16} style={{ color: 'var(--gold)' }} />}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="field">
+            <label className="label">2. Servicio a realizar</label>
+            <select
+              className="select"
+              value={walkInForm.servicio_id}
+              onChange={(e) => setWalkInForm({ ...walkInForm, servicio_id: e.target.value })}
+            >
+              {serviciosArea.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.nombre} · {duracion(s.duracion_minutos)} · {money(s.precio)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="row" style={{ gap: 12 }}>
+            <div className="field grow">
+              <label className="label">Nombre del Cliente</label>
+              <input
+                className="input"
+                value={walkInForm.cliente}
+                placeholder="Ej. Cliente de paso #1"
+                onChange={(e) => setWalkInForm({ ...walkInForm, cliente: e.target.value })}
+              />
+            </div>
+            <div className="field grow">
+              <label className="label">Teléfono (Opcional)</label>
+              <input
+                className="input"
+                type="tel"
+                value={walkInForm.cliente_telefono}
+                placeholder="Ej. 300 123 4567"
+                onChange={(e) => setWalkInForm({ ...walkInForm, cliente_telefono: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="row wrap mt-12" style={{ gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn-amber grow"
+              disabled={busy || !walkInForm.empleado_id || !walkInForm.servicio_id}
+              onClick={async () => {
+                setBusy(true)
+                try {
+                  const serv = servicios.find((s) => s.id === walkInForm.servicio_id)
+                  const ini = new Date()
+                  await api.createCita({
+                    cliente: walkInForm.cliente.trim() || 'Cliente de Paso',
+                    cliente_telefono: walkInForm.cliente_telefono || null,
+                    empleado_id: walkInForm.empleado_id,
+                    servicio_id: walkInForm.servicio_id,
+                    fecha_hora: ini.toISOString(),
+                    duracion_minutos: serv?.duracion_minutos || 30,
+                    precio: serv?.precio || 0,
+                    estado: 'en_proceso',
+                    notas: walkInForm.notas || 'Cliente de paso',
+                  })
+                  toast.success('Atención iniciada. Aparece en atención en la agenda.')
+                  setModalWalkIn(false)
+                  cargarAgenda()
+                } catch (err) {
+                  toast.error(err)
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              <Icon name="play" /> Atender Ahora (En Proceso)
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-primary grow"
+              disabled={busy || !walkInForm.empleado_id || !walkInForm.servicio_id}
+              onClick={async () => {
+                setBusy(true)
+                try {
+                  const serv = servicios.find((s) => s.id === walkInForm.servicio_id)
+                  const ini = new Date()
+                  const nueva = await api.createCita({
+                    cliente: walkInForm.cliente.trim() || 'Cliente de Paso',
+                    cliente_telefono: walkInForm.cliente_telefono || null,
+                    empleado_id: walkInForm.empleado_id,
+                    servicio_id: walkInForm.servicio_id,
+                    fecha_hora: ini.toISOString(),
+                    duracion_minutos: serv?.duracion_minutos || 30,
+                    precio: serv?.precio || 0,
+                    estado: 'completada',
+                    notas: walkInForm.notas || 'Cliente de paso',
+                  })
+                  toast.success('Cita creada y lista para cobro en caja.')
+                  setModalWalkIn(false)
+                  navigate(`/caja?cita=${nueva.id}`)
+                } catch (err) {
+                  toast.error(err)
+                } finally {
+                  setBusy(false)
+                }
+              }}
+            >
+              <Icon name="cash" /> Ya terminó (Pasar a Caja)
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

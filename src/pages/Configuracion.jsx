@@ -4,8 +4,9 @@ import { Avatar, Empty, Modal, Skeleton, Spinner, Switch } from '../components/u
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/api'
-import { AREAS } from '../lib/constants'
+import { AREAS, DIAS_SEMANA } from '../lib/constants'
 import { duracion, money } from '../lib/format'
+import { getEmpleadoHorario, saveEmpleadoHorario } from '../lib/horarios'
 
 export default function Configuracion() {
   const { profile, refreshProfile } = useAuth()
@@ -97,7 +98,14 @@ export default function Configuracion() {
         porcentaje_comision: Number(modalEditarEmpleado.porcentaje_comision),
         activo: modalEditarEmpleado.activo,
       })
-      toast.success('Datos de empleado actualizados')
+
+      // Guardar descanso y horario
+      saveEmpleadoHorario(modalEditarEmpleado.id, {
+        diaId: modalEditarEmpleado.dia_descanso,
+        horario: modalEditarEmpleado.horario_trabajo || '9:00 AM - 9:00 PM',
+      })
+
+      toast.success('Datos de empleado y horario actualizados')
       setModalEditarEmpleado(null)
       cargarDatos()
     } catch (err) {
@@ -260,6 +268,7 @@ export default function Configuracion() {
                     <tr>
                       <th>Empleado</th>
                       <th>Área</th>
+                      <th>Descanso / Horario</th>
                       <th>Correo</th>
                       <th className="num">% Comisión</th>
                       <th>Estado</th>
@@ -267,42 +276,63 @@ export default function Configuracion() {
                     </tr>
                   </thead>
                   <tbody>
-                    {empleados.map((emp) => (
-                      <tr key={emp.id} style={{ opacity: emp.activo ? 1 : 0.5 }}>
-                        <td>
-                          <div className="row">
-                            <Avatar nombre={emp.nombre} area={emp.area} />
-                            <div>
-                              <strong>{emp.nombre}</strong>
-                              {!emp.activo && <span className="faint small"> (Inactivo)</span>}
+                    {empleados.map((emp) => {
+                      const h = getEmpleadoHorario(emp)
+                      return (
+                        <tr key={emp.id} style={{ opacity: emp.activo ? 1 : 0.5 }}>
+                          <td>
+                            <div className="row">
+                              <Avatar nombre={emp.nombre} area={emp.area} />
+                              <div>
+                                <strong>{emp.nombre}</strong>
+                                {!emp.activo && <span className="faint small"> (Inactivo)</span>}
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td>
-                          <span className={`badge ${emp.area === 'women' ? 'badge-rose' : 'badge-gold'} no-dot`}>
-                            {AREAS[emp.area]?.label || emp.area}
-                          </span>
-                        </td>
-                        <td className="faint small mono">{emp.email}</td>
-                        <td className="num mono">
-                          <strong style={{ color: 'var(--gold)' }}>{emp.porcentaje_comision}%</strong>
-                        </td>
-                        <td>
-                          <span className={`badge ${emp.activo ? 'badge-completada' : 'badge-cancelada'}`}>
-                            {emp.activo ? 'Activo' : 'Desactivado'}
-                          </span>
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <button
-                            className="btn btn-ghost btn-icon btn-sm"
-                            onClick={() => setModalEditarEmpleado({ ...emp })}
-                            id={`cfg-edit-emp-${emp.id}`}
-                          >
-                            <Icon name="edit" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td>
+                            <span className={`badge ${emp.area === 'women' ? 'badge-rose' : 'badge-gold'} no-dot`}>
+                              {AREAS[emp.area]?.label || emp.area}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="col" style={{ gap: 3 }}>
+                              <span className="badge badge-en_proceso no-dot" style={{ fontSize: 11, width: 'fit-content' }}>
+                                🏖️ {h.diaNombre}
+                              </span>
+                              <span className="faint small mono" style={{ fontSize: 11 }}>
+                                ⏰ {h.horario}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="faint small mono">{emp.email}</td>
+                          <td className="num mono">
+                            <strong style={{ color: 'var(--gold)' }}>{emp.porcentaje_comision}%</strong>
+                          </td>
+                          <td>
+                            <span className={`badge ${emp.activo ? 'badge-completada' : 'badge-cancelada'}`}>
+                              {emp.activo ? 'Activo' : 'Desactivado'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <button
+                              className="btn btn-ghost btn-icon btn-sm"
+                              onClick={() => {
+                                const horarioEmp = getEmpleadoHorario(emp)
+                                setModalEditarEmpleado({
+                                  ...emp,
+                                  dia_descanso: horarioEmp.diaId,
+                                  horario_trabajo: horarioEmp.horario,
+                                })
+                              }}
+                              id={`cfg-edit-emp-${emp.id}`}
+                              title="Editar empleado y horario"
+                            >
+                              <Icon name="edit" />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -617,6 +647,41 @@ export default function Configuracion() {
                 value={modalEditarEmpleado.porcentaje_comision}
                 onChange={(e) =>
                   setModalEditarEmpleado({ ...modalEditarEmpleado, porcentaje_comision: e.target.value })
+                }
+              />
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="edit-emp-descanso">Día de Descanso Semanal</label>
+              <select
+                id="edit-emp-descanso"
+                className="select"
+                value={modalEditarEmpleado.dia_descanso ?? ''}
+                onChange={(e) =>
+                  setModalEditarEmpleado({
+                    ...modalEditarEmpleado,
+                    dia_descanso: e.target.value === '' ? '' : Number(e.target.value),
+                  })
+                }
+              >
+                <option value="">Sin descanso fijo</option>
+                {DIAS_SEMANA.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field">
+              <label className="label" htmlFor="edit-emp-horario">Horario de Trabajo</label>
+              <input
+                id="edit-emp-horario"
+                className="input"
+                placeholder="Ej. 9:00 AM - 9:00 PM"
+                value={modalEditarEmpleado.horario_trabajo || '9:00 AM - 9:00 PM'}
+                onChange={(e) =>
+                  setModalEditarEmpleado({ ...modalEditarEmpleado, horario_trabajo: e.target.value })
                 }
               />
             </div>

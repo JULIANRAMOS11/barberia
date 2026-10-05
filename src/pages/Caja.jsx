@@ -354,25 +354,42 @@ export default function Caja() {
                         <Icon name="bill" />
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600 }}>{METODOS_PAGO.efectivo}</div>
-                        <div className="faint small">Pago en billetes / monedas</div>
+                        <div style={{ fontWeight: 600 }}>Efectivo</div>
+                        <div className="faint small">Billetes y monedas</div>
                       </div>
                     </button>
 
                     <button
                       type="button"
-                      className={`pay-method ${metodoPago === 'nequi' ? 'active' : ''}`}
-                      aria-pressed={metodoPago === 'nequi'}
+                      className={`pay-method ${metodoPago === 'transferencia' ? 'active' : ''}`}
+                      aria-pressed={metodoPago === 'transferencia'}
                       disabled={processing}
-                      onClick={() => setMetodoPago('nequi')}
-                      id="caja-metodo-nequi"
+                      onClick={() => setMetodoPago('transferencia')}
+                      id="caja-metodo-transferencia"
                     >
                       <div className="pm-icon" style={{ color: 'hsl(300, 75%, 75%)' }}>
                         <Icon name="smartphone" />
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600 }}>{METODOS_PAGO.nequi}</div>
-                        <div className="faint small">Transferencia digital</div>
+                        <div style={{ fontWeight: 600 }}>Transferencia</div>
+                        <div className="faint small">Nequi · Bre-B · Daviplata</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`pay-method ${metodoPago === 'tarjeta' ? 'active' : ''}`}
+                      aria-pressed={metodoPago === 'tarjeta'}
+                      disabled={processing}
+                      onClick={() => setMetodoPago('tarjeta')}
+                      id="caja-metodo-tarjeta"
+                    >
+                      <div className="pm-icon" style={{ color: 'hsl(210, 100%, 72%)' }}>
+                        <Icon name="creditCard" />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>Tarjeta / Datáfono</div>
+                        <div className="faint small">Débito y Crédito</div>
                       </div>
                     </button>
                   </div>

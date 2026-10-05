@@ -40,7 +40,8 @@ export default function Dashboard() {
     const activas = citasHoy.filter((c) => c.estado !== 'cancelada').length
     const porCobrar = citasHoy.filter((c) => c.estado === 'completada').length
     const efectivo = cajaHoy.filter((r) => r.metodo_pago === 'efectivo').reduce((s, r) => s + Number(r.total_pago), 0)
-    const nequi = cajaHoy.filter((r) => r.metodo_pago === 'nequi').reduce((s, r) => s + Number(r.total_pago), 0)
+    const transferencia = cajaHoy.filter((r) => ['transferencia', 'nequi'].includes(r.metodo_pago)).reduce((s, r) => s + Number(r.total_pago), 0)
+    const tarjeta = cajaHoy.filter((r) => r.metodo_pago === 'tarjeta').reduce((s, r) => s + Number(r.total_pago), 0)
     const top = {}
     for (const r of caja7) {
       const nombre = r.cita?.servicio?.nombre ?? 'Servicio'
@@ -88,7 +89,7 @@ export default function Dashboard() {
         </section>
         <section className="card finance-summary">
           <div className="card-header"><div><h2 className="card-title">Resumen financiero</h2><p className="faint small">Pagos registrados en caja</p></div><Link to="/reportes" className="btn btn-ghost btn-icon btn-sm" aria-label="Abrir reportes"><Icon name="chevronRight" /></Link></div>
-          <div className="finance-charts"><div><p className="small muted">Ingresos de hoy</p><strong className="finance-amount mono">{money(m.ingresos)} <small>COP</small></strong><RevenueChart days={m.days} /><p className="chart-caption faint">Evolución · últimos 7 días</p></div><div><p className="small muted">Ventas por método · hoy</p><PaymentDonut efectivo={m.efectivo} nequi={m.nequi} /></div></div>
+          <div className="finance-charts"><div><p className="small muted">Ventas por método · hoy</p><PaymentDonut efectivo={m.efectivo} transferencia={m.transferencia} tarjeta={m.tarjeta} /></div><div><p className="small muted">Ingresos de hoy</p><strong className="finance-amount mono">{money(m.ingresos)} <small>COP</small></strong><RevenueChart days={m.days} /><p className="chart-caption faint">Evolución · últimos 7 días</p></div></div>
           <div className="finance-footer"><span>Después de comisiones <small>Antes de costos y gastos</small></span><strong className="mono">{money(m.ingresos - m.comisiones)}</strong></div>
         </section>
       </div>
