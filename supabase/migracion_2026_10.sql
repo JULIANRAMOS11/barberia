@@ -23,10 +23,13 @@ alter type public.metodo_pago   add value if not exists 'tarjeta';
 alter type public.tipo_producto add value if not exists 'herramienta';
 
 -- ---------------------------------------------------------------------
--- 3. Horario de empleados en la BD
+-- 3. Horario de empleados e inventario (proveedor / categoría)
 -- ---------------------------------------------------------------------
 alter table public.usuarios add column if not exists dia_descanso    smallint;
 alter table public.usuarios add column if not exists horario_trabajo text;
+
+alter table public.inventario add column if not exists proveedor text;
+alter table public.inventario add column if not exists categoria text;
 
 do $$ begin
   alter table public.usuarios

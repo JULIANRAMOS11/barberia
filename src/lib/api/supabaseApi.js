@@ -154,11 +154,80 @@ export const supabaseApi = {
 
   // ---------------- Inventario ----------------
   async listInventario() {
-    return check(await supabase.from('inventario').select('*').order('nombre'))
+    const raw = check(await supabase.from('inventario').select('*').order('nombre'))
+    try {
+      const meta = JSON.parse(localStorage.getItem('barberia_inventario_meta') || '{}')
+      return raw.map((p) => {
+        const n = (p.nombre || '').toLowerCase()
+        const proveedorAuto =
+          p.proveedor ||
+          meta[p.id]?.proveedor ||
+          (n.includes('wahl')
+            ? 'Wahl Professional'
+            : n.includes('masglo') || n.includes('esmalte') || n.includes('acrílico')
+            ? 'Masglo Cosméticos'
+            : n.includes('cuchilla') || n.includes('dorco')
+            ? 'Dorco / Super-Max (Cuchillas)'
+            : n.includes('babyliss')
+            ? 'Babyliss Pro'
+            : n.includes('cera') || n.includes('pomada') || n.includes('barba')
+            ? 'Barber Pro Supply'
+            : 'Distribuidora Belleza Total')
+
+        const categoriaAuto =
+          p.categoria ||
+          meta[p.id]?.categoria ||
+          (n.includes('máquina') || n.includes('patillera') || n.includes('lámpara') || n.includes('secador')
+            ? 'maquina'
+            : n.includes('esmalte') || n.includes('acrílico') || n.includes('uña')
+            ? 'esmalte'
+            : n.includes('cuchilla') || n.includes('papel') || n.includes('talco') || n.includes('alcohol') || n.includes('gel de afeitar')
+            ? 'insumo'
+            : n.includes('capa') || n.includes('toalla') || n.includes('delantal')
+            ? 'dotacion'
+            : p.tipo === 'venta'
+            ? 'venta'
+            : 'insumo')
+
+        return {
+          ...p,
+          proveedor: proveedorAuto,
+          categoria: categoriaAuto,
+        }
+      })
+    } catch {
+      return raw
+    }
   },
   async saveProducto({ id, ...p }) {
-    if (id) return check(await supabase.from('inventario').update(p).eq('id', id).select().single())
-    return check(await supabase.from('inventario').insert(p).select().single())
+    let meta = {}
+    try {
+      meta = JSON.parse(localStorage.getItem('barberia_inventario_meta') || '{}')
+    } catch {}
+
+    const { proveedor, categoria, ...core } = p
+
+    if (id) {
+      let res = await supabase.from('inventario').update(p).eq('id', id).select().single()
+      if (res.error && res.error.message?.includes('column')) {
+        res = await supabase.from('inventario').update(core).eq('id', id).select().single()
+      }
+      const saved = check(res)
+      meta[id] = { proveedor: proveedor || meta[id]?.proveedor, categoria: categoria || meta[id]?.categoria }
+      try { localStorage.setItem('barberia_inventario_meta', JSON.stringify(meta)) } catch {}
+      return { ...saved, proveedor: proveedor || meta[id]?.proveedor, categoria: categoria || meta[id]?.categoria }
+    } else {
+      let res = await supabase.from('inventario').insert(p).select().single()
+      if (res.error && res.error.message?.includes('column')) {
+        res = await supabase.from('inventario').insert(core).select().single()
+      }
+      const saved = check(res)
+      if (saved?.id) {
+        meta[saved.id] = { proveedor, categoria }
+        try { localStorage.setItem('barberia_inventario_meta', JSON.stringify(meta)) } catch {}
+      }
+      return { ...saved, proveedor, categoria }
+    }
   },
   async deleteProducto(id) {
     check(await supabase.from('inventario').delete().eq('id', id))

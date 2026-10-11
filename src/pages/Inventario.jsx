@@ -3,7 +3,7 @@ import Icon from '../components/Icon'
 import { Avatar, Empty, Modal, Skeleton, Spinner, StatCard } from '../components/ui'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/api'
-import { TIPOS_PRODUCTO } from '../lib/constants'
+import { CATEGORIAS_INVENTARIO, PROVEEDORES_DEFAULT, TIPOS_PRODUCTO } from '../lib/constants'
 import { money } from '../lib/format'
 
 const INITIAL_DOTACIONES = [
@@ -24,7 +24,8 @@ export default function Inventario() {
   const toast = useToast()
   const [productos, setProductos] = useState([])
   const [loading, setLoading] = useState(true)
-  const [tabTipo, setTabTipo] = useState('todos') // todos | venta | consumo_interno | herramienta | dotacion | bajo_stock
+  const [tabTipo, setTabTipo] = useState('todos') // todos | venta | insumo | esmalte | dotacion_prendas | maquina | bajo_stock | dotacion
+  const [filtroProveedor, setFiltroProveedor] = useState('todos')
   const [busqueda, setBusqueda] = useState('')
   const [modalProducto, setModalProducto] = useState(null)
   const [modalDotacion, setModalDotacion] = useState(false)
@@ -48,6 +49,8 @@ export default function Inventario() {
   const [form, setForm] = useState({
     nombre: '',
     tipo: 'venta',
+    categoria: 'venta',
+    proveedor: 'Barber Pro Supply',
     stock_actual: 0,
     stock_minimo: 5,
     precio_compra: 0,
@@ -70,12 +73,22 @@ export default function Inventario() {
     cargarInventario()
   }, [cargarInventario])
 
+  const proveedoresDisponibles = useMemo(() => {
+    const set = new Set(PROVEEDORES_DEFAULT)
+    productos.forEach((p) => {
+      if (p.proveedor?.trim()) set.add(p.proveedor.trim())
+    })
+    return Array.from(set).sort()
+  }, [productos])
+
   const abrirModal = (producto = null) => {
     if (producto) {
       setForm({
         id: producto.id,
         nombre: producto.nombre,
-        tipo: producto.tipo,
+        tipo: producto.tipo || (producto.categoria === 'venta' ? 'venta' : producto.categoria === 'maquina' ? 'herramienta' : 'consumo_interno'),
+        categoria: producto.categoria || (producto.tipo === 'venta' ? 'venta' : producto.tipo === 'herramienta' ? 'maquina' : 'insumo'),
+        proveedor: producto.proveedor || 'Distribuidora Belleza Total',
         stock_actual: producto.stock_actual,
         stock_minimo: producto.stock_minimo ?? 5,
         precio_compra: producto.precio_compra,
@@ -85,6 +98,8 @@ export default function Inventario() {
       setForm({
         nombre: '',
         tipo: 'venta',
+        categoria: 'venta',
+        proveedor: 'Barber Pro Supply',
         stock_actual: 10,
         stock_minimo: 5,
         precio_compra: 0,
@@ -102,13 +117,24 @@ export default function Inventario() {
     }
     setGuardando(true)
     try {
+      // Sincronizar tipo base con categoría elegida
+      const tipoFinal =
+        form.categoria === 'venta'
+          ? 'venta'
+          : form.categoria === 'maquina' || form.categoria === 'dotacion'
+          ? 'herramienta'
+          : 'consumo_interno'
+
       await api.saveProducto({
         ...form,
+        tipo: tipoFinal,
         nombre: form.nombre.trim(),
+        proveedor: (form.proveedor || 'Distribuidora Belleza Total').trim(),
+        categoria: form.categoria || 'venta',
         stock_actual: Number(form.stock_actual),
         stock_minimo: Number(form.stock_minimo),
         precio_compra: Number(form.precio_compra),
-        precio_venta: form.tipo === 'venta' ? Number(form.precio_venta) : 0,
+        precio_venta: tipoFinal === 'venta' ? Number(form.precio_venta) : 0,
       })
       toast.success(form.id ? 'Producto actualizado' : 'Producto añadido al inventario')
       setModalProducto(null)
@@ -141,17 +167,30 @@ export default function Inventario() {
     }
   }
 
-  // Filtrado
+  // Filtrado avanzado por categoría, proveedor y búsqueda
   const productosFiltrados = useMemo(() => {
     return productos.filter((p) => {
-      const matchesSearch = p.nombre.toLowerCase().includes(busqueda.toLowerCase())
+      const q = busqueda.toLowerCase().trim()
+      const matchesSearch =
+        !q ||
+        (p.nombre || '').toLowerCase().includes(q) ||
+        (p.proveedor || '').toLowerCase().includes(q)
       if (!matchesSearch) return false
+
+      if (filtroProveedor !== 'todos' && p.proveedor !== filtroProveedor) {
+        return false
+      }
 
       if (tabTipo === 'todos') return true
       if (tabTipo === 'bajo_stock') return p.stock_actual < (p.stock_minimo ?? 5)
-      return p.tipo === tabTipo
+      if (tabTipo === 'venta') return p.tipo === 'venta' || p.categoria === 'venta'
+      if (tabTipo === 'insumo') return p.categoria === 'insumo' || (p.tipo === 'consumo_interno' && p.categoria !== 'esmalte')
+      if (tabTipo === 'esmalte') return p.categoria === 'esmalte' || (p.nombre || '').toLowerCase().includes('esmalte') || (p.nombre || '').toLowerCase().includes('acrílico')
+      if (tabTipo === 'dotacion_prendas') return p.categoria === 'dotacion' || (p.nombre || '').toLowerCase().includes('capa') || (p.nombre || '').toLowerCase().includes('toalla') || (p.nombre || '').toLowerCase().includes('delantal')
+      if (tabTipo === 'maquina') return p.categoria === 'maquina' || p.tipo === 'herramienta'
+      return p.tipo === tabTipo || p.categoria === tabTipo
     })
-  }, [productos, busqueda, tabTipo])
+  }, [productos, busqueda, tabTipo, filtroProveedor])
 
   // Estadísticas rápidas
   const metricas = useMemo(() => {
@@ -159,19 +198,30 @@ export default function Inventario() {
     const bajos = productos.filter((p) => p.stock_actual < (p.stock_minimo ?? 5)).length
     const valorCosto = productos.reduce((sum, p) => sum + Number(p.precio_compra || 0) * p.stock_actual, 0)
     const valorVentaEsperado = productos
-      .filter((p) => p.tipo === 'venta')
+      .filter((p) => p.tipo === 'venta' || p.categoria === 'venta')
       .reduce((sum, p) => sum + Number(p.precio_venta || 0) * p.stock_actual, 0)
 
     return { totalItems, bajos, valorCosto, valorVentaEsperado }
   }, [productos])
 
+  const getCategoriaLabel = (p) => {
+    const cat = p.categoria || (p.tipo === 'venta' ? 'venta' : p.tipo === 'herramienta' ? 'maquina' : 'insumo')
+    const match = CATEGORIAS_INVENTARIO[cat]
+    if (match) return `${match.emoji} ${match.label}`
+    if (cat === 'dotacion') return '🥼 Dotación / Prendas'
+    if (cat === 'maquina') return '⚡ Máquinas / Equipos'
+    if (cat === 'esmalte') return '💅 Esmaltes y Uñas'
+    if (cat === 'insumo') return '🪒 Insumos y Cuchillas'
+    return '🛍️ Venta al Público'
+  }
+
   return (
     <div className="animate-in">
       <header className="page-header">
         <div>
-          <h1 className="page-title">Inventario y Stock</h1>
+          <h1 className="page-title">Inventario, Proveedores y Stock</h1>
           <p className="page-sub">
-            Control de productos para venta a clientes y de consumo interno para estilistas y barberos.
+            Organizado por proveedor, insumos de barbería (cuchillas, talcos), esmaltes, prendas, máquinas y productos de venta.
           </p>
         </div>
         <div className="row wrap" style={{ gap: 10 }}>
@@ -180,14 +230,14 @@ export default function Inventario() {
             onClick={() => setModalDotacion(true)}
             id="inv-btn-dotacion"
           >
-            <Icon name="tool" /> Asignar Dotación
+            <Icon name="tool" /> Asignar Dotación a Personal
           </button>
           <button
             className="btn btn-primary"
             onClick={() => abrirModal(null)}
             id="inv-btn-nuevo"
           >
-            <Icon name="plus" /> Nuevo Producto / Máquina
+            <Icon name="plus" /> Nuevo Producto / Insumo
           </button>
         </div>
       </header>
@@ -198,7 +248,7 @@ export default function Inventario() {
           icon="box"
           label="Total de Productos"
           value={metricas.totalItems}
-          hint="En catálogo activo"
+          hint={`${proveedoresDisponibles.length} proveedores registrados`}
         />
         <StatCard
           icon="alert"
@@ -223,62 +273,105 @@ export default function Inventario() {
         />
       </div>
 
-      {/* Barra de Filtros y Búsqueda */}
+      {/* Barra de Filtros por Categoría, Proveedor y Búsqueda */}
       <div className="card mt-24">
+        {/* Pestañas de Categoría */}
+        <div className="segmented wrap mb-16" style={{ gap: 4 }}>
+          <button
+            className={tabTipo === 'todos' ? 'active' : ''}
+            onClick={() => setTabTipo('todos')}
+            id="inv-tab-todos"
+          >
+            Todos ({productos.length})
+          </button>
+          <button
+            className={tabTipo === 'venta' ? 'active' : ''}
+            onClick={() => setTabTipo('venta')}
+            id="inv-tab-venta"
+          >
+            🛍️ Venta al Público ({productos.filter((p) => p.tipo === 'venta' || p.categoria === 'venta').length})
+          </button>
+          <button
+            className={tabTipo === 'insumo' ? 'active' : ''}
+            onClick={() => setTabTipo('insumo')}
+            id="inv-tab-insumos"
+          >
+            🪒 Insumos y Cuchillas ({productos.filter((p) => p.categoria === 'insumo' || ((p.tipo === 'consumo_interno') && p.categoria !== 'esmalte')).length})
+          </button>
+          <button
+            className={tabTipo === 'esmalte' ? 'active' : ''}
+            onClick={() => setTabTipo('esmalte')}
+            id="inv-tab-esmaltes"
+          >
+            💅 Esmaltes y Uñas ({productos.filter((p) => p.categoria === 'esmalte' || (p.nombre || '').toLowerCase().includes('esmalte') || (p.nombre || '').toLowerCase().includes('acrílico')).length})
+          </button>
+          <button
+            className={tabTipo === 'dotacion_prendas' ? 'active' : ''}
+            onClick={() => setTabTipo('dotacion_prendas')}
+            id="inv-tab-prendas"
+          >
+            🥼 Prendas y Dotación ({productos.filter((p) => p.categoria === 'dotacion' || (p.nombre || '').toLowerCase().includes('capa') || (p.nombre || '').toLowerCase().includes('toalla')).length})
+          </button>
+          <button
+            className={tabTipo === 'maquina' ? 'active' : ''}
+            onClick={() => setTabTipo('maquina')}
+            id="inv-tab-equipos"
+          >
+            ⚡ Máquinas y Equipos ({productos.filter((p) => p.categoria === 'maquina' || p.tipo === 'herramienta').length})
+          </button>
+          <button
+            className={tabTipo === 'bajo_stock' ? 'active' : ''}
+            onClick={() => setTabTipo('bajo_stock')}
+            id="inv-tab-bajos"
+            style={{ color: metricas.bajos > 0 ? 'var(--red)' : undefined }}
+          >
+            ⚠️ Stock Bajo ({metricas.bajos})
+          </button>
+          <button
+            className={tabTipo === 'dotacion' ? 'active' : ''}
+            onClick={() => setTabTipo('dotacion')}
+            id="inv-tab-dotacion"
+            style={{ fontWeight: 700 }}
+          >
+            👤 Dotación por Personal ({dotaciones.length})
+          </button>
+        </div>
+
+        {/* Fila de Filtro por Proveedor y Búsqueda */}
         <div className="row-between wrap" style={{ marginBottom: 16, gap: 12 }}>
-          <div className="segmented wrap">
-            <button
-              className={tabTipo === 'todos' ? 'active' : ''}
-              onClick={() => setTabTipo('todos')}
-              id="inv-tab-todos"
+          <div className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
+            <span className="faint small" style={{ fontWeight: 600 }}>Filtrar Proveedor:</span>
+            <select
+              className="select select-sm"
+              style={{ minWidth: 200 }}
+              value={filtroProveedor}
+              onChange={(e) => setFiltroProveedor(e.target.value)}
+              id="inv-filtro-proveedor"
             >
-              Todos ({productos.length})
-            </button>
-            <button
-              className={tabTipo === 'venta' ? 'active' : ''}
-              onClick={() => setTabTipo('venta')}
-              id="inv-tab-venta"
-            >
-              Venta ({productos.filter((p) => p.tipo === 'venta').length})
-            </button>
-            <button
-              className={tabTipo === 'consumo_interno' ? 'active' : ''}
-              onClick={() => setTabTipo('consumo_interno')}
-              id="inv-tab-consumo"
-            >
-              Consumo Interno ({productos.filter((p) => p.tipo === 'consumo_interno').length})
-            </button>
-            <button
-              className={tabTipo === 'herramienta' ? 'active' : ''}
-              onClick={() => setTabTipo('herramienta')}
-              id="inv-tab-equipos"
-            >
-              Máquinas y Equipos ({productos.filter((p) => p.tipo === 'herramienta').length})
-            </button>
-            <button
-              className={tabTipo === 'dotacion' ? 'active' : ''}
-              onClick={() => setTabTipo('dotacion')}
-              id="inv-tab-dotacion"
-              style={{ fontWeight: 700 }}
-            >
-              Dotación por Empleado ({dotaciones.length})
-            </button>
-            <button
-              className={tabTipo === 'bajo_stock' ? 'active' : ''}
-              onClick={() => setTabTipo('bajo_stock')}
-              id="inv-tab-bajos"
-              style={{ color: metricas.bajos > 0 ? 'var(--red)' : undefined }}
-            >
-              Stock Bajo ({metricas.bajos})
-            </button>
+              <option value="todos">🏢 Todos los Proveedores ({proveedoresDisponibles.length})</option>
+              {proveedoresDisponibles.map((prv) => (
+                <option key={prv} value={prv}>
+                  {prv} ({productos.filter((p) => p.proveedor === prv).length})
+                </option>
+              ))}
+            </select>
+            {filtroProveedor !== 'todos' && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setFiltroProveedor('todos')}
+              >
+                Limpiar filtro
+              </button>
+            )}
           </div>
 
-          <div className="input-icon" style={{ width: 260 }}>
+          <div className="input-icon" style={{ width: 280 }}>
             <Icon name="search" />
             <input
               type="text"
               className="input input-sm"
-              placeholder="Buscar producto por nombre…"
+              placeholder="Buscar por producto o proveedor…"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               id="inv-buscar"
@@ -359,7 +452,7 @@ export default function Inventario() {
           <Skeleton h={200} />
         ) : productosFiltrados.length === 0 ? (
           <Empty icon="box" title="No se encontraron productos">
-            {busqueda ? 'No hay productos que coincidan con la búsqueda.' : 'Agrega tu primer producto al inventario.'}
+            {busqueda || filtroProveedor !== 'todos' ? 'No hay productos que coincidan con la búsqueda o filtro.' : 'Agrega tu primer producto al inventario.'}
           </Empty>
         ) : (
           <div className="table-wrap">
@@ -367,7 +460,8 @@ export default function Inventario() {
               <thead>
                 <tr>
                   <th>Producto / Equipo</th>
-                  <th>Tipo</th>
+                  <th>Proveedor</th>
+                  <th>Categoría</th>
                   <th style={{ textAlign: 'center' }}>Stock Actual</th>
                   <th className="num">Costo Compra</th>
                   <th className="num">Precio Venta</th>
@@ -388,8 +482,13 @@ export default function Inventario() {
                         )}
                       </td>
                       <td>
-                        <span className={`badge ${prod.tipo === 'venta' ? 'badge-gold' : prod.tipo === 'herramienta' ? 'badge-amber' : 'badge-nequi'} no-dot`}>
-                          {TIPOS_PRODUCTO[prod.tipo] || prod.tipo}
+                        <span className="badge badge-nequi no-dot" style={{ fontWeight: 600 }}>
+                          🏢 {prod.proveedor || 'Sin proveedor'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${prod.tipo === 'venta' || prod.categoria === 'venta' ? 'badge-gold' : prod.tipo === 'herramienta' || prod.categoria === 'maquina' ? 'badge-amber' : 'badge-ghost'} no-dot`}>
+                          {getCategoriaLabel(prod)}
                         </span>
                       </td>
                       <td style={{ textAlign: 'center' }}>
@@ -426,7 +525,7 @@ export default function Inventario() {
                       </td>
                       <td className="num mono faint">{money(prod.precio_compra)}</td>
                       <td className="num mono">
-                        {prod.tipo === 'venta' ? (
+                        {prod.tipo === 'venta' || prod.categoria === 'venta' ? (
                           <strong style={{ color: 'var(--gold)' }}>{money(prod.precio_venta)}</strong>
                         ) : (
                           <span className="faint">—</span>
@@ -466,7 +565,7 @@ export default function Inventario() {
         open={Boolean(modalProducto)}
         onClose={() => setModalProducto(null)}
         title={form.id ? 'Editar Producto o Equipo' : 'Nuevo Producto / Equipo'}
-        subtitle="Distingue entre insumos, máquinas de trabajo y productos para clientes."
+        subtitle="Organizado por proveedor, categoría y control de stock mínimo."
         footer={
           <>
             <button className="btn btn-ghost" onClick={() => setModalProducto(null)} type="button">
@@ -480,34 +579,54 @@ export default function Inventario() {
       >
         <form id="form-producto" className="form-grid" onSubmit={guardarProducto}>
           <div className="field span-2">
-            <label className="label" htmlFor="prod-nombre">Nombre del Producto / Equipo</label>
+            <label className="label" htmlFor="prod-nombre">Nombre del Producto / Equipo / Insumo</label>
             <input
               id="prod-nombre"
               className="input"
               required
-              placeholder="Ej. Cera mate, Máquina Wahl, Secador Babyliss..."
+              placeholder="Ej. Cera mate Reuzel, Cuchillas Dorco, Esmalte Masglo, Capa de corte..."
               value={form.nombre}
               onChange={(e) => setForm({ ...form, nombre: e.target.value })}
               autoFocus
             />
           </div>
 
-          <div className="field span-2">
-            <label className="label" htmlFor="prod-tipo">Tipo de Ítem</label>
+          <div className="field">
+            <label className="label" htmlFor="prod-proveedor">Proveedor / Distribuidor</label>
+            <input
+              id="prod-proveedor"
+              list="proveedores-sugeridos"
+              className="input"
+              required
+              placeholder="Ej. Wahl Professional, Masglo, Dorco..."
+              value={form.proveedor}
+              onChange={(e) => setForm({ ...form, proveedor: e.target.value })}
+            />
+            <datalist id="proveedores-sugeridos">
+              {proveedoresDisponibles.map((prv) => (
+                <option key={prv} value={prv} />
+              ))}
+            </datalist>
+          </div>
+
+          <div className="field">
+            <label className="label" htmlFor="prod-categoria">Categoría del Ítem</label>
             <select
-              id="prod-tipo"
+              id="prod-categoria"
               className="select"
-              value={form.tipo}
-              onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+              value={form.categoria}
+              onChange={(e) => setForm({ ...form, categoria: e.target.value })}
             >
-              <option value="venta">Venta al cliente (Se puede cobrar en Caja)</option>
-              <option value="consumo_interno">Consumo interno (Insumo del barbero/peluquera)</option>
-              <option value="herramienta">Máquinas y Equipos del local (Activos / Dotación)</option>
+              <option value="venta">🛍️ Venta al cliente (Ceras, Minoxidil, etc.)</option>
+              <option value="insumo">🪒 Insumos y Cuchillas (Barbería / Consumo)</option>
+              <option value="esmalte">💅 Esmaltes y Uñas (Manicura / Spa)</option>
+              <option value="dotacion">🥼 Prendas y Dotación (Capas, Toallas, Delantales)</option>
+              <option value="maquina">⚡ Máquinas y Equipos (Clippers, Secadores, Lámparas)</option>
             </select>
           </div>
 
           <div className="field">
-            <label className="label" htmlFor="prod-stock-actual">Stock Actual</label>
+            <label className="label" htmlFor="prod-stock-actual">Stock Actual (Unidades)</label>
             <input
               id="prod-stock-actual"
               type="number"
@@ -533,7 +652,7 @@ export default function Inventario() {
           </div>
 
           <div className="field">
-            <label className="label" htmlFor="prod-precio-compra">Precio de Compra / Costo</label>
+            <label className="label" htmlFor="prod-precio-compra">Precio de Compra / Costo ($)</label>
             <input
               id="prod-precio-compra"
               type="number"
@@ -545,9 +664,9 @@ export default function Inventario() {
             />
           </div>
 
-          {form.tipo === 'venta' && (
+          {form.categoria === 'venta' && (
             <div className="field">
-              <label className="label" htmlFor="prod-precio-venta">Precio de Venta al Público</label>
+              <label className="label" htmlFor="prod-precio-venta">Precio de Venta al Público ($)</label>
               <input
                 id="prod-precio-venta"
                 type="number"

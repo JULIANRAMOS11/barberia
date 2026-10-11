@@ -56,33 +56,67 @@ export function buildSeed() {
 
   const s = (nombre, area, precio, duracion_minutos) => ({ id: uid(), barberia_id: B, nombre, area, precio, duracion_minutos, activo: true })
   const servicios = [
-    s('Corte clásico', 'barberia', 25000, 30),
-    s('Corte + Barba', 'barberia', 35000, 45),
-    s('Degradado / Fade', 'barberia', 30000, 45),
-    s('Barba perfilada', 'barberia', 15000, 30),
-    s('Afeitado con navaja', 'barberia', 20000, 30),
-    s('Cejas y diseño', 'barberia', 10000, 15),
+    s('Corte Simple / Fade', 'barberia', 25000, 30),
+    s('Corte + Cejas', 'barberia', 30000, 35),
+    s('Corte + Barba + Cejas (Completo)', 'barberia', 45000, 50),
+    s('Barba y Perfilado', 'barberia', 15000, 20),
+    s('Cejas Solas', 'barberia', 5000, 15),
+    s('Afeitado Tradicional', 'barberia', 20000, 30),
     s('Manicure tradicional', 'women', 25000, 45),
-    s('Pedicure spa', 'women', 32000, 60),
+    s('Pedicure spa', 'women', 35000, 60),
     s('Uñas acrílicas', 'women', 85000, 120),
     s('Semipermanente', 'women', 45000, 60),
+    s('Cepillado y Peinado', 'women', 35000, 45),
     s('Corte dama', 'women', 40000, 60),
-    s('Cepillado', 'women', 35000, 45),
   ]
 
-  const p = (nombre, tipo, stock_actual, precio_compra, precio_venta) => ({ id: uid(), barberia_id: B, nombre, tipo, stock_actual, stock_minimo: 5, precio_compra, precio_venta })
+  const p = (nombre, tipo, categoria, proveedor, stock_actual, precio_compra, precio_venta) => ({
+    id: uid(),
+    barberia_id: B,
+    nombre,
+    tipo,
+    categoria,
+    proveedor,
+    stock_actual,
+    stock_minimo: 5,
+    precio_compra,
+    precio_venta,
+  })
+
   const inventario = [
-    p('Cera mate Reuzel', 'venta', 12, 22000, 42000),
-    p('Pomada brillo', 'venta', 4, 18000, 35000),
-    p('Aceite para barba', 'venta', 8, 15000, 32000),
-    p('Shampoo anticaspa', 'venta', 3, 14000, 28000),
-    p('Minoxidil 5%', 'venta', 10, 35000, 60000),
-    p('Kit cuidado de uñas', 'venta', 6, 12000, 25000),
-    p('Esmalte semipermanente', 'consumo_interno', 22, 9000, 0),
-    p('Cuchillas desechables (caja)', 'consumo_interno', 3, 25000, 0),
-    p('Talco barbero', 'consumo_interno', 6, 8000, 0),
-    p('Toallas desechables', 'consumo_interno', 40, 500, 0),
-    p('Acetona pura', 'consumo_interno', 2, 7000, 0),
+    // Venta al cliente
+    p('Cera mate Reuzel Clay Pomade', 'venta', 'venta', 'Reuzel Grooming', 12, 22000, 42000),
+    p('Pomada brillo Suavecito', 'venta', 'venta', 'Barber Pro Supply', 8, 18000, 35000),
+    p('Aceite para barba y bigote', 'venta', 'venta', 'Reuzel Grooming', 8, 15000, 32000),
+    p('Minoxidil 5% Kirkland (60ml)', 'venta', 'venta', 'Barber Pro Supply', 10, 35000, 60000),
+    p('Shampoo anticaspa y control grasa', 'venta', 'venta', 'Distribuidora Belleza Total', 6, 14000, 28000),
+    p('Kit cuidado y brillo de uñas', 'venta', 'venta', 'Masglo Cosméticos', 6, 12000, 25000),
+
+    // Insumos y cuchillas
+    p('Cuchillas Dorco Prime Platinum (caja x100)', 'consumo_interno', 'insumo', 'Dorco / Super-Max (Cuchillas)', 8, 25000, 0),
+    p('Cuchillas Super-Max Super Platinum (x100)', 'consumo_interno', 'insumo', 'Dorco / Super-Max (Cuchillas)', 5, 22000, 0),
+    p('Papel de cuello elástico (rollo x5)', 'consumo_interno', 'insumo', 'Barber Pro Supply', 15, 8000, 0),
+    p('Talco barbero perfumado extra fino', 'consumo_interno', 'insumo', 'Barber Pro Supply', 6, 10000, 0),
+    p('Alcohol antiséptico 70% 1 Litro', 'consumo_interno', 'insumo', 'Distribuidora Belleza Total', 12, 9000, 0),
+    p('Gel de afeitar transparente de precisión', 'consumo_interno', 'insumo', 'Barber Pro Supply', 9, 14000, 0),
+
+    // Esmaltes y Uñas
+    p('Esmalte tradicional Masglo (Colección)', 'venta', 'esmalte', 'Masglo Cosméticos', 25, 6000, 12000),
+    p('Esmalte semipermanente Masglo Gel Evolution', 'venta', 'esmalte', 'Masglo Cosméticos', 18, 14000, 28000),
+    p('Polvo Acrílico Mia Secret 2oz', 'venta', 'esmalte', 'Masglo Cosméticos', 10, 18000, 35000),
+    p('Limas profesionales grano 100/180 (paq)', 'consumo_interno', 'esmalte', 'Masglo Cosméticos', 20, 3500, 0),
+    p('Acetona pura desmaquilladora 1L', 'consumo_interno', 'esmalte', 'Distribuidora Belleza Total', 4, 11000, 0),
+
+    // Prendas y Dotación
+    p('Capa de corte impermeable diseño Barber', 'herramienta', 'dotacion', 'Barber Pro Supply', 10, 25000, 0),
+    p('Delantal de barbero en lona y cuero', 'herramienta', 'dotacion', 'Barber Pro Supply', 4, 45000, 0),
+    p('Toallas microfibra negras (paquete x6)', 'consumo_interno', 'dotacion', 'Distribuidora Belleza Total', 18, 24000, 0),
+
+    // Máquinas y Herramientas
+    p('Máquina Wahl Magic Clip Cordless 5 Stars', 'herramienta', 'maquina', 'Wahl Professional', 3, 420000, 0),
+    p('Patillera Babyliss Pro Skeleton GoldFX', 'herramienta', 'maquina', 'Babyliss Pro', 2, 390000, 0),
+    p('Lámpara UV/LED SunX Plus 72W para Uñas', 'herramienta', 'maquina', 'Distribuidora Belleza Total', 3, 75000, 0),
+    p('Secador Babyliss Pro 2000W Iónico', 'herramienta', 'maquina', 'Babyliss Pro', 2, 160000, 0),
   ]
 
   const citas = []

@@ -5,7 +5,7 @@ import { Avatar, Empty, Modal, Spinner, StatCard } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/api'
-import { AREAS, METODOS_PAGO } from '../lib/constants'
+import { AREAS, METODOS_PAGO, SERVICIOS_EXTRAS_COMUNES } from '../lib/constants'
 import { addDays, duracion, fechaHora, hora, money, startOfDay } from '../lib/format'
 
 export default function Caja() {
@@ -21,6 +21,9 @@ export default function Caja() {
   const [servicios, setServicios] = useState([])
   const [selectedCita, setSelectedCita] = useState(null)
   const [productosVenta, setProductosVenta] = useState({}) // { [productoId]: cantidad }
+  const [extrasSeleccionados, setExtrasSeleccionados] = useState([]) // extras del servicio agendado
+  const [adicionalManual, setAdicionalManual] = useState(0) // valor extra manual
+  const [conceptoAdicional, setConceptoAdicional] = useState('')
   const [metodoPago, setMetodoPago] = useState('efectivo')
   const [pagosHoy, setPagosHoy] = useState([])
   const [loading, setLoading] = useState(true)
@@ -72,10 +75,21 @@ export default function Caja() {
     cargarDatos()
   }, [cargarDatos])
 
-  // Reset selected products when switching appointment
+  // Reset productos y extras al cambiar de cita seleccionada
   useEffect(() => {
     setProductosVenta({})
+    setExtrasSeleccionados([])
+    setAdicionalManual(0)
+    setConceptoAdicional('')
   }, [selectedCita?.id])
+
+  const toggleExtraCita = (extraItem) => {
+    setExtrasSeleccionados((prev) => {
+      const existe = prev.some((x) => x.id === extraItem.id)
+      if (existe) return prev.filter((x) => x.id !== extraItem.id)
+      return [...prev, extraItem]
+    })
+  }
 
   const productosFiltrados = useMemo(() => {
     return inventario.filter((p) =>
@@ -121,33 +135,58 @@ export default function Caja() {
     })
   }
 
-  // Cálculos en tiempo real
+  // Cálculos en tiempo real con aislamiento de comisión (0% productos para el barbero)
   const calculos = useMemo(() => {
-    if (!selectedCita) return { subtotalServicio: 0, subtotalProductos: 0, total: 0, comision: 0, porcentaje: 0 }
+    if (!selectedCita) {
+      return {
+        subtotalBaseServicio: 0,
+        subtotalExtras: 0,
+        subtotalServicio: 0,
+        subtotalProductos: 0,
+        total: 0,
+        comision: 0,
+        gananciaLocalServicios: 0,
+        gananciaLocalProductos: 0,
+        gananciaLocalTotal: 0,
+        porcentaje: 0,
+      }
+    }
 
-    const subtotalServicio = Number(selectedCita.precio || 0)
+    const subtotalBaseServicio = Number(selectedCita.precio || 0)
+    const sumExtras = extrasSeleccionados.reduce((s, x) => s + Number(x.precio || 0), 0)
+    const extraManualNum = Math.max(0, Number(adicionalManual) || 0)
+    const subtotalExtras = sumExtras + extraManualNum
+    const subtotalServicio = subtotalBaseServicio + subtotalExtras
+
     let subtotalProductos = 0
-
     Object.entries(productosVenta).forEach(([prodId, cant]) => {
       const item = inventario.find((p) => p.id === prodId)
       if (item) {
-        subtotalProductos += Number(item.precio_venta) * cant
+        subtotalProductos += Number(item.precio_venta || 0) * cant
       }
     })
 
+    const porcentaje = Number(selectedCita.empleado?.porcentaje_comision ?? 45)
+    // REGLA CRÍTICA: Comisión del barbero = ÚNICAMENTE sobre servicios y sus extras (0% productos)
+    const comision = Math.round((subtotalServicio * porcentaje) / 100)
+    const gananciaLocalServicios = subtotalServicio - comision
+    const gananciaLocalProductos = subtotalProductos // 100% ganancia del negocio
+    const gananciaLocalTotal = gananciaLocalServicios + gananciaLocalProductos
     const total = subtotalServicio + subtotalProductos
-    const porcentaje = Number(selectedCita.empleado?.porcentaje_comision ?? 40)
-    // Regla recomendada: comisión calculada sobre el servicio (o según configuración de barbería)
-    const comision = Math.round(((subtotalServicio + (comisionIncluyeProductos ? subtotalProductos : 0)) * porcentaje) / 100)
 
     return {
+      subtotalBaseServicio,
+      subtotalExtras,
       subtotalServicio,
       subtotalProductos,
       total,
       comision,
+      gananciaLocalServicios,
+      gananciaLocalProductos,
+      gananciaLocalTotal,
       porcentaje,
     }
-  }, [selectedCita, productosVenta, inventario, comisionIncluyeProductos])
+  }, [selectedCita, extrasSeleccionados, adicionalManual, productosVenta, inventario])
 
   const handleProcesarPago = async () => {
     if (!selectedCita) {
@@ -157,6 +196,26 @@ export default function Caja() {
 
     setProcessing(true)
     try {
+      // 1. Si se agregaron extras al servicio agendado, sincronizar el precio de la cita
+      //    para que la RPC procesar_pago calcule la comisión exacta en la BD.
+      if (calculos.subtotalServicio !== Number(selectedCita.precio)) {
+        const extraManualNum = Math.max(0, Number(adicionalManual) || 0)
+        const notasExtras = [
+          ...extrasSeleccionados.map((x) => x.nombre),
+          extraManualNum > 0 ? (conceptoAdicional ? `${conceptoAdicional} ($${extraManualNum})` : `Adicional ($${extraManualNum})`) : null,
+        ].filter(Boolean).join(', ')
+
+        const nuevaNota = selectedCita.notas
+          ? `${selectedCita.notas} · Extras: ${notasExtras}`
+          : (notasExtras ? `Extras: ${notasExtras}` : '')
+
+        await api.updateCita(selectedCita.id, {
+          precio: calculos.subtotalServicio,
+          notas: nuevaNota,
+        })
+      }
+
+      // 2. Procesar pago en caja y descontar productos de inventario
       const productosPayload = Object.entries(productosVenta).map(([producto_id, cantidad]) => ({
         producto_id,
         cantidad,
@@ -170,7 +229,18 @@ export default function Caja() {
 
       toast.success('¡Pago registrado con éxito en Caja!')
       setTicketExitoso({
-        cita: selectedCita,
+        cita: {
+          ...selectedCita,
+          precio: calculos.subtotalServicio,
+        },
+        extras: extrasSeleccionados,
+        adicionalManual: Math.max(0, Number(adicionalManual) || 0),
+        conceptoAdicional,
+        subtotalServicio: calculos.subtotalServicio,
+        subtotalProductos: calculos.subtotalProductos,
+        total: calculos.total,
+        comision: calculos.comision,
+        gananciaLocalTotal: calculos.gananciaLocalTotal,
         metodo: metodoPago,
         resultado,
         productosComprados: Object.entries(productosVenta).map(([id, cant]) => ({
@@ -184,6 +254,9 @@ export default function Caja() {
       setCitasCompletadas((prev) => prev.filter((c) => c.id !== selectedCita.id))
       setSelectedCita(null)
       setProductosVenta({})
+      setExtrasSeleccionados([])
+      setAdicionalManual(0)
+      setConceptoAdicional('')
 
       await cargarDatos()
     } catch (err) {
@@ -253,8 +326,9 @@ export default function Caja() {
 
     const total = subtotalServicio + subtotalProductos
     const porcentaje = Number(emp?.porcentaje_comision ?? 45)
-    const comision = Math.round(((subtotalServicio + (comisionIncluyeProductos ? subtotalProductos : 0)) * porcentaje) / 100)
-    const gananciaLocal = total - comision
+    // Comisión de empleado: estrictamente calculada sobre servicios
+    const comision = Math.round((subtotalServicio * porcentaje) / 100)
+    const gananciaLocal = (subtotalServicio - comision) + subtotalProductos
 
     return {
       emp,
@@ -267,7 +341,7 @@ export default function Caja() {
       comision,
       gananciaLocal,
     }
-  }, [cobroDirectoForm, empleados, servicios, inventario, comisionIncluyeProductos])
+  }, [cobroDirectoForm, empleados, servicios, inventario])
 
   const handleGuardarCobroDirecto = async (e) => {
     e.preventDefault()
@@ -493,12 +567,104 @@ export default function Caja() {
                   <span className="badge badge-completada no-dot">Completada</span>
                 </div>
 
-                {/* Sección de agregar productos al cobro */}
+                {/* 1. Servicio Base Agendado y Extras en Silla */}
+                <div
+                  style={{
+                    padding: '14px',
+                    borderRadius: 'var(--radius)',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  <div className="row-between wrap mb-8">
+                    <div>
+                      <span className="badge badge-gold no-dot" style={{ fontSize: 11, marginBottom: 4 }}>
+                        Servicio Agendado
+                      </span>
+                      <div style={{ fontWeight: 700, fontSize: 16 }}>{selectedCita.servicio?.nombre}</div>
+                      <span className="faint small">Base acordada en la agenda</span>
+                    </div>
+                    <div className="mono gold-text" style={{ fontSize: 18, fontWeight: 700 }}>
+                      {money(calculos.subtotalBaseServicio)}
+                    </div>
+                  </div>
+
+                  {/* Sección de Extras / Adicionales del Barbero */}
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border)' }}>
+                    <div className="row-between wrap mb-8">
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>
+                          ➕ ¿El barbero realizó servicios adicionales en silla?
+                        </div>
+                        <span className="faint small">
+                          Suma al servicio y a la comisión de {selectedCita.empleado?.nombre} ({calculos.porcentaje}%).
+                        </span>
+                      </div>
+                      {calculos.subtotalExtras > 0 && (
+                        <span className="badge badge-green no-dot mono" style={{ fontSize: 12 }}>
+                          +{money(calculos.subtotalExtras)} en extras
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Botones de Extras Rápidos */}
+                    <div className="row wrap" style={{ gap: 8, marginBottom: 10 }}>
+                      {SERVICIOS_EXTRAS_COMUNES.map((ext) => {
+                        const activo = extrasSeleccionados.some((x) => x.id === ext.id)
+                        return (
+                          <button
+                            type="button"
+                            key={ext.id}
+                            className={`btn btn-sm ${activo ? 'btn-primary' : 'btn-outline'}`}
+                            onClick={() => toggleExtraCita(ext)}
+                            style={{ borderRadius: 20 }}
+                            id={`caja-extra-${ext.id}`}
+                          >
+                            {activo ? '✓ ' : '+ '} {ext.nombre} ({money(ext.precio)})
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* Campo para valor adicional manual */}
+                    <div className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
+                      <div style={{ flex: 1, minWidth: 140 }}>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1000"
+                          className="input input-sm"
+                          placeholder="Otro adicional ($)"
+                          value={adicionalManual || ''}
+                          onChange={(e) => setAdicionalManual(Number(e.target.value))}
+                          id="caja-extra-manual-monto"
+                        />
+                      </div>
+                      <div style={{ flex: 2, minWidth: 160 }}>
+                        <input
+                          type="text"
+                          className="input input-sm"
+                          placeholder="Motivo (ej. Diseño freestyle, mascarilla)..."
+                          value={conceptoAdicional}
+                          onChange={(e) => setConceptoAdicional(e.target.value)}
+                          id="caja-extra-manual-motivo"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Sección de agregar productos al cobro */}
                 <div>
                   <div className="row-between wrap mb-8 product-search-header">
                     <div>
-                      <h3 style={{ fontSize: 14, fontWeight: 600 }}>Añadir Productos de Venta</h3>
-                      <p className="faint small">Resta automáticamente del inventario al procesar el pago.</p>
+                      <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                        <h3 style={{ fontSize: 14, fontWeight: 600 }}>🛍️ Productos de Venta (Vitrina)</h3>
+                        <span className="badge badge-nequi no-dot" style={{ fontSize: 11 }}>100% Barbería · 0% Barbero</span>
+                      </div>
+                      <p className="faint small">
+                        Los productos comprados se suman al cobro pero NO comisionan al barbero.
+                      </p>
                     </div>
                     <div className="input-icon" style={{ width: 200 }}>
                       <Icon name="search" />
@@ -634,41 +800,96 @@ export default function Caja() {
                   </div>
                 </div>
 
-                {/* Resumen del Ticket y Comisiones Calculadas */}
+                {/* Resumen del Ticket y Reparto Exacto de Caja */}
                 <div className="receipt">
-                  <div className="receipt-row">
-                    <span className="muted">Servicio: {selectedCita.servicio?.nombre}</span>
-                    <strong className="mono">{money(calculos.subtotalServicio)}</strong>
-                  </div>
-
-                  {Object.entries(productosVenta).map(([id, cant]) => {
-                    const prod = inventario.find((p) => p.id === id)
-                    if (!prod) return null
-                    return (
-                      <div className="receipt-row" key={id}>
-                        <span className="faint small">
-                          + {prod.nombre} (x{cant})
-                        </span>
-                        <span className="mono small">{money(prod.precio_venta * cant)}</span>
+                  {/* Bloque 1: Servicios del Barbero */}
+                  <div style={{ paddingBottom: 10, borderBottom: '1px solid var(--border)', marginBottom: 8 }}>
+                    <div className="row-between">
+                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>💇‍♂️ Servicios Realizados</span>
+                      <strong className="mono">{money(calculos.subtotalServicio)}</strong>
+                    </div>
+                    <div className="row-between faint small" style={{ marginTop: 2 }}>
+                      <span>· Base: {selectedCita.servicio?.nombre}</span>
+                      <span className="mono">{money(calculos.subtotalBaseServicio)}</span>
+                    </div>
+                    {extrasSeleccionados.map((ext) => (
+                      <div className="row-between faint small" key={ext.id}>
+                        <span>· {ext.nombre}</span>
+                        <span className="mono">+{money(ext.precio)}</span>
                       </div>
-                    )
-                  })}
-
-                  <div className="receipt-row total">
-                    <span>Total a Cobrar</span>
-                    <span className="gold-text">{money(calculos.total)}</span>
+                    ))}
+                    {Number(adicionalManual) > 0 && (
+                      <div className="row-between faint small">
+                        <span>· {conceptoAdicional || 'Valor adicional'}</span>
+                        <span className="mono">+{money(adicionalManual)}</span>
+                      </div>
+                    )}
+                    <div className="row-between small" style={{ marginTop: 6, color: 'var(--green)' }}>
+                      <span>✓ Comisión para {selectedCita.empleado?.nombre} ({calculos.porcentaje}%):</span>
+                      <strong className="mono">{money(calculos.comision)}</strong>
+                    </div>
+                    <div className="row-between faint small">
+                      <span>✓ Ganancia Barbería por Servicios:</span>
+                      <span className="mono">{money(calculos.gananciaLocalServicios)}</span>
+                    </div>
                   </div>
 
-                  <div className="commission-box">
-                    <div className="row" style={{ gap: 10 }}>
-                      <Icon name="percent" size={20} style={{ color: 'var(--green)' }} />
-                      <div>
-                        <div style={{ fontWeight: 600, color: 'var(--green)' }}>
-                          Comisión Calculada: {money(calculos.comision)}
+                  {/* Bloque 2: Productos de Tienda */}
+                  <div style={{ paddingBottom: 10, borderBottom: '1px solid var(--border)', marginBottom: 8 }}>
+                    <div className="row-between">
+                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>🛍️ Productos de Tienda</span>
+                      <strong className="mono">{money(calculos.subtotalProductos)}</strong>
+                    </div>
+                    {Object.entries(productosVenta).length === 0 ? (
+                      <div className="faint small" style={{ fontStyle: 'italic', marginTop: 2 }}>Sin productos agregados</div>
+                    ) : (
+                      Object.entries(productosVenta).map(([id, cant]) => {
+                        const prod = inventario.find((p) => p.id === id)
+                        if (!prod) return null
+                        return (
+                          <div className="row-between faint small" key={id}>
+                            <span>· {prod.nombre} (x{cant})</span>
+                            <span className="mono">{money(prod.precio_venta * cant)}</span>
+                          </div>
+                        )
+                      })
+                    )}
+                    <div className="row-between small" style={{ marginTop: 6, color: 'var(--gold)' }}>
+                      <span>✓ Ganancia Barbería por Productos (100%):</span>
+                      <strong className="mono">{money(calculos.gananciaLocalProductos)}</strong>
+                    </div>
+                    <div className="row-between faint small">
+                      <span>✓ Comisión barbero por productos:</span>
+                      <span className="mono">$0</span>
+                    </div>
+                  </div>
+
+                  {/* Total a Cobrar al Cliente */}
+                  <div className="receipt-row total">
+                    <span>Total a Cobrar al Cliente</span>
+                    <span className="gold-text mono" style={{ fontSize: 20 }}>{money(calculos.total)}</span>
+                  </div>
+
+                  {/* Arqueo / Cierre de la operación */}
+                  <div className="commission-box" style={{ marginTop: 12 }}>
+                    <div className="col" style={{ gap: 6 }}>
+                      <div className="row-between">
+                        <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                          <Icon name="checkCircle" size={16} style={{ color: 'var(--green)' }} />
+                          <span style={{ fontWeight: 600 }}>A pagar a {selectedCita.empleado?.nombre}:</span>
                         </div>
-                        <div className="faint small">
-                          Corresponde al {calculos.porcentaje}% para {selectedCita.empleado?.nombre}
+                        <strong className="mono" style={{ color: 'var(--green)', fontSize: 15 }}>
+                          {money(calculos.comision)}
+                        </strong>
+                      </div>
+                      <div className="row-between">
+                        <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                          <Icon name="wallet" size={16} style={{ color: 'var(--gold)' }} />
+                          <span style={{ fontWeight: 600 }}>Queda en Caja del Local:</span>
                         </div>
+                        <strong className="mono gold-text" style={{ fontSize: 15 }}>
+                          {money(calculos.gananciaLocalTotal)}
+                        </strong>
                       </div>
                     </div>
                   </div>
@@ -815,13 +1036,22 @@ export default function Caja() {
         title="¡Pago Registrado en Caja!"
         subtitle="La cita ha sido marcada como Pagada y se actualizó el stock."
         footer={
-          <button
-            className="btn btn-primary"
-            onClick={() => setTicketExitoso(null)}
-            id="ticket-cerrar"
-          >
-            Aceptar
-          </button>
+          <div className="row-between wrap" style={{ width: '100%', gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => window.print()}
+            >
+              <Icon name="bill" /> Imprimir Comprobante
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => setTicketExitoso(null)}
+              id="ticket-cerrar"
+            >
+              Aceptar y Cerrar
+            </button>
+          </div>
         }
       >
         {ticketExitoso && (
@@ -837,10 +1067,10 @@ export default function Caja() {
             >
               <Icon name="checkCircle" size={32} style={{ color: 'var(--green)', margin: '0 auto 8px' }} />
               <h3 style={{ fontSize: 24, fontWeight: 700 }} className="mono">
-                {money(ticketExitoso.resultado?.total_pago || 0)}
+                {money(ticketExitoso.resultado?.total_pago || ticketExitoso.total || 0)}
               </h3>
               <p className="small faint">
-                Método: <strong>{METODOS_PAGO[ticketExitoso.metodo]}</strong> · {fechaHora(ticketExitoso.fecha)}
+                Método: <strong>{METODOS_PAGO[ticketExitoso.metodo] || ticketExitoso.metodo}</strong> · {fechaHora(ticketExitoso.fecha)}
               </p>
             </div>
 
@@ -850,21 +1080,43 @@ export default function Caja() {
                 <strong>{ticketExitoso.cita?.cliente}</strong>
               </div>
               <div className="receipt-row">
-                <span className="muted">Servicio:</span>
-                <span>{ticketExitoso.cita?.servicio?.nombre}</span>
+                <span className="muted">Atendido por:</span>
+                <strong>{ticketExitoso.cita?.empleado?.nombre}</strong>
               </div>
+              <div className="receipt-row">
+                <span className="muted">Servicios Realizados:</span>
+                <span className="mono">{money(ticketExitoso.subtotalServicio || ticketExitoso.cita?.precio || 0)}</span>
+              </div>
+              {ticketExitoso.extras?.map((x) => (
+                <div className="receipt-row faint small" key={x.id}>
+                  <span>· Extra: {x.nombre}</span>
+                  <span className="mono">+{money(x.precio)}</span>
+                </div>
+              ))}
+              {ticketExitoso.adicionalManual > 0 && (
+                <div className="receipt-row faint small">
+                  <span>· {ticketExitoso.conceptoAdicional || 'Extra en silla'}:</span>
+                  <span className="mono">+{money(ticketExitoso.adicionalManual)}</span>
+                </div>
+              )}
               {ticketExitoso.productosComprados?.map(({ producto, cantidad }) => (
                 <div className="receipt-row" key={producto?.id}>
                   <span className="faint small">
-                    Prod: {producto?.nombre} (x{cantidad})
+                    🛍️ Prod: {producto?.nombre} (x{cantidad})
                   </span>
                   <span className="mono small">{money((producto?.precio_venta || 0) * cantidad)}</span>
                 </div>
               ))}
               <div className="receipt-row total">
-                <span>Comisión acreditada al barbero/a:</span>
+                <span>Comisión para el Barbero/a:</span>
                 <span style={{ color: 'var(--green)' }}>
-                  {money(ticketExitoso.resultado?.comision_empleado || 0)}
+                  {money(ticketExitoso.resultado?.comision_empleado || ticketExitoso.comision || 0)}
+                </span>
+              </div>
+              <div className="receipt-row" style={{ color: 'var(--gold)', fontWeight: 600 }}>
+                <span>Ingreso Neto para la Barbería:</span>
+                <span className="mono">
+                  {money(ticketExitoso.gananciaLocalTotal || ((ticketExitoso.resultado?.total_pago || 0) - (ticketExitoso.resultado?.comision_empleado || 0)))}
                 </span>
               </div>
             </div>
