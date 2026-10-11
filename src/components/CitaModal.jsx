@@ -55,6 +55,7 @@ export default function CitaModal({ open, onClose, onSaved, empleados, servicios
     setBusy(true)
     try {
       const payload = {
+        barberia_id: servicio.barberia_id,
         cliente: form.cliente.trim(),
         cliente_telefono: form.cliente_telefono.trim(),
         empleado_id: form.empleado_id,

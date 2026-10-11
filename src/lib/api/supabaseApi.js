@@ -117,7 +117,18 @@ export const supabaseApi = {
     return check(await q)
   },
   async createCita(c) {
+    let barberia_id = c.barberia_id
+    if (!barberia_id && c.servicio_id) {
+      const { data: serv } = await supabase.from('servicios').select('barberia_id').eq('id', c.servicio_id).maybeSingle()
+      if (serv?.barberia_id) barberia_id = serv.barberia_id
+    }
+    if (!barberia_id && c.empleado_id) {
+      const { data: emp } = await supabase.from('usuarios').select('barberia_id').eq('id', c.empleado_id).maybeSingle()
+      if (emp?.barberia_id) barberia_id = emp.barberia_id
+    }
+
     const payload = {
+      ...(barberia_id ? { barberia_id } : {}),
       cliente: c.cliente,
       cliente_telefono: c.cliente_telefono || null,
       empleado_id: c.empleado_id,

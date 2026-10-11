@@ -269,6 +269,7 @@ export default function Caja() {
       const inicio = new Date(Date.now() - Number(serv?.duracion_minutos || 30) * 60000)
       inicio.setSeconds(0, 0)
       const cita = await api.createCita({
+        barberia_id: serv?.barberia_id,
         cliente: cobroDirectoForm.cliente.trim() || 'Cliente Mostrador',
         empleado_id: cobroDirectoForm.empleado_id,
         servicio_id: cobroDirectoForm.servicio_id,

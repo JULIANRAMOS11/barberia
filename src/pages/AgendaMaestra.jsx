@@ -511,7 +511,9 @@ export default function AgendaMaestra() {
                 try {
                   const serv = servicios.find((s) => s.id === walkInForm.servicio_id)
                   const ini = new Date()
+                  ini.setSeconds(0, 0)
                   await api.createCita({
+                    barberia_id: serv?.barberia_id,
                     cliente: walkInForm.cliente.trim() || 'Cliente de Paso',
                     cliente_telefono: walkInForm.cliente_telefono || null,
                     empleado_id: walkInForm.empleado_id,
@@ -543,14 +545,17 @@ export default function AgendaMaestra() {
                 setBusy(true)
                 try {
                   const serv = servicios.find((s) => s.id === walkInForm.servicio_id)
-                  const ini = new Date()
+                  const durMin = Number(serv?.duracion_minutos || 30)
+                  const ini = new Date(Date.now() - durMin * 60000)
+                  ini.setSeconds(0, 0)
                   const nueva = await api.createCita({
+                    barberia_id: serv?.barberia_id,
                     cliente: walkInForm.cliente.trim() || 'Cliente de Paso',
                     cliente_telefono: walkInForm.cliente_telefono || null,
                     empleado_id: walkInForm.empleado_id,
                     servicio_id: walkInForm.servicio_id,
                     fecha_hora: ini.toISOString(),
-                    duracion_minutos: serv?.duracion_minutos || 30,
+                    duracion_minutos: durMin,
                     precio: serv?.precio || 0,
                     estado: 'completada',
                     notas: walkInForm.notas || 'Cliente de paso',
