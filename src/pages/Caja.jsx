@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Icon from '../components/Icon'
-import { Avatar, Empty, Modal, Spinner } from '../components/ui'
+import { Avatar, Empty, Modal, Spinner, StatCard } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/api'
 import { AREAS, METODOS_PAGO } from '../lib/constants'
-import { duracion, fechaHora, money } from '../lib/format'
+import { addDays, duracion, fechaHora, hora, money, startOfDay } from '../lib/format'
 
 export default function Caja() {
   const toast = useToast()
@@ -22,6 +22,7 @@ export default function Caja() {
   const [selectedCita, setSelectedCita] = useState(null)
   const [productosVenta, setProductosVenta] = useState({}) // { [productoId]: cantidad }
   const [metodoPago, setMetodoPago] = useState('efectivo')
+  const [pagosHoy, setPagosHoy] = useState([])
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [ticketExitoso, setTicketExitoso] = useState(null)
@@ -43,16 +44,20 @@ export default function Caja() {
   const cargarDatos = useCallback(async () => {
     setLoading(true)
     try {
-      const [citas, prods, emps, servs] = await Promise.all([
+      const hoy = startOfDay(new Date())
+      const manana = addDays(hoy, 1)
+      const [citas, prods, emps, servs, pagos] = await Promise.all([
         api.listCitas({ estados: ['completada'] }),
         api.listInventario(),
         api.listEquipo({ soloActivos: true }),
         api.listServicios({ soloActivos: true }),
+        api.listCaja({ desde: hoy, hasta: manana }),
       ])
       setCitasCompletadas(citas)
       setInventario(prods.filter((p) => p.tipo === 'venta'))
       setEmpleados(emps)
       setServicios(servs)
+      setPagosHoy(pagos || [])
 
       setSelectedCita((current) => citas.find((c) => c.id === current?.id)
         || citas.find((c) => c.id === preselectCitaId) || citas[0] || null)
@@ -77,6 +82,25 @@ export default function Caja() {
       p.nombre.toLowerCase().includes(busquedaProducto.toLowerCase())
     )
   }, [inventario, busquedaProducto])
+
+  // Métricas financieras del día en tiempo real (Arqueo de caja)
+  const metricasCaja = useMemo(() => {
+    const totalRecaudado = pagosHoy.reduce((s, p) => s + Number(p.total_pago || 0), 0)
+    const efectivo = pagosHoy.filter((p) => p.metodo_pago === 'efectivo').reduce((s, p) => s + Number(p.total_pago || 0), 0)
+    const transferencia = pagosHoy.filter((p) => ['transferencia', 'nequi'].includes(p.metodo_pago)).reduce((s, p) => s + Number(p.total_pago || 0), 0)
+    const tarjeta = pagosHoy.filter((p) => p.metodo_pago === 'tarjeta').reduce((s, p) => s + Number(p.total_pago || 0), 0)
+    const totalComisiones = pagosHoy.reduce((s, p) => s + Number(p.comision_empleado || 0), 0)
+    const gananciaLocal = totalRecaudado - totalComisiones
+    return {
+      totalRecaudado,
+      efectivo,
+      transferencia,
+      tarjeta,
+      totalComisiones,
+      gananciaLocal,
+      cantidad: pagosHoy.length,
+    }
+  }, [pagosHoy])
 
   const modificarCantidad = (producto, delta) => {
     const actual = productosVenta[producto.id] || 0
@@ -156,18 +180,12 @@ export default function Caja() {
         fecha: new Date(),
       })
 
-      // Actualizar listado local
+      // Actualizar listado local e inventario
       setCitasCompletadas((prev) => prev.filter((c) => c.id !== selectedCita.id))
       setSelectedCita(null)
       setProductosVenta({})
 
-      // Actualizar inventario local restando las cantidades
-      setInventario((prev) =>
-        prev.map((item) => {
-          const vendidas = productosVenta[item.id] || 0
-          return vendidas > 0 ? { ...item, stock_actual: Math.max(0, item.stock_actual - vendidas) } : item
-        })
-      )
+      await cargarDatos()
     } catch (err) {
       toast.error(err)
     } finally {
@@ -353,12 +371,45 @@ export default function Caja() {
         </div>
       </header>
 
+      {/* Tarjetas de Arqueo de Caja e Ingresos de Hoy */}
+      <div className="grid grid-4 stagger mb-24">
+        <StatCard
+          icon="trending"
+          accent="gold"
+          label="Total Recaudado Hoy"
+          value={money(metricasCaja.totalRecaudado)}
+          hint={`${metricasCaja.cantidad} pago${metricasCaja.cantidad === 1 ? '' : 's'} liquidado${metricasCaja.cantidad === 1 ? '' : 's'} hoy`}
+        />
+        <StatCard
+          icon="bill"
+          accent="green"
+          label="Efectivo en Cajón"
+          value={money(metricasCaja.efectivo)}
+          hint="Dinero físico en caja"
+        />
+        <StatCard
+          icon="smartphone"
+          accent="violet"
+          label="Transferencias / Nequi"
+          value={money(metricasCaja.transferencia)}
+          hint={`Tarjetas/Datáfono: ${money(metricasCaja.tarjeta)}`}
+        />
+        <StatCard
+          icon="wallet"
+          accent="blue"
+          label="Ganancia Neta del Local"
+          value={money(metricasCaja.gananciaLocal)}
+          hint={`Comisiones personal: ${money(metricasCaja.totalComisiones)}`}
+        />
+      </div>
+
       {loading ? (
         <div className="loader-screen" style={{ minHeight: '40vh' }}>
           <Spinner />
         </div>
       ) : (
-        <div className="caja-grid">
+        <>
+          <div className="caja-grid">
           {/* Columna Izquierda: Citas pendientes por cobrar */}
           <section className="card caja-pending">
             <div className="card-header">
@@ -643,6 +694,118 @@ export default function Caja() {
             )}
           </section>
         </div>
+
+        {/* Sección de Historial de Cobros Realizados Hoy */}
+        <section className="card mt-24">
+          <div className="card-header">
+            <div>
+              <h2 className="card-title">Cobros Realizados Hoy (Arqueo de Pagos)</h2>
+              <p className="faint small">
+                {pagosHoy.length} pago{pagosHoy.length === 1 ? '' : 's'} registrado{pagosHoy.length === 1 ? '' : 's'} hoy · Total: <strong style={{ color: 'var(--gold)' }}>{money(metricasCaja.totalRecaudado)}</strong>
+              </p>
+            </div>
+            <span className="badge badge-completada no-dot">{pagosHoy.length} tickets</span>
+          </div>
+
+          {pagosHoy.length === 0 ? (
+            <Empty icon="receipt" title="Aún no hay cobros registrados hoy">
+              A medida que liquides citas o registres cobros en mostrador, aparecerán aquí para el cuadre diario de caja.
+            </Empty>
+          ) : (
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Hora</th>
+                    <th>Cliente</th>
+                    <th>Atendido por</th>
+                    <th>Servicio / Productos</th>
+                    <th>Método de Pago</th>
+                    <th className="num">Total Cobrado</th>
+                    <th className="num" style={{ color: 'var(--green)' }}>Comisión</th>
+                    <th style={{ textAlign: 'right' }}>Recibo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagosHoy.map((p) => {
+                    const totalProds = p.productos?.length || 0
+                    return (
+                      <tr key={p.id}>
+                        <td className="mono faint small">{hora(p.created_at)}</td>
+                        <td>
+                          <strong>{p.cita?.cliente || 'Cliente Mostrador'}</strong>
+                        </td>
+                        <td>
+                          <div className="row" style={{ gap: 6 }}>
+                            <Avatar nombre={p.empleado?.nombre} area={p.empleado?.area} size={24} />
+                            <span>{p.empleado?.nombre || 'Profesional'}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div>
+                            <span>{p.cita?.servicio?.nombre || 'Servicio'}</span>
+                            {totalProds > 0 && (
+                              <span className="faint small" style={{ display: 'block' }}>
+                                +{totalProds} producto{totalProds === 1 ? '' : 's'}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`badge badge-${p.metodo_pago}`}>
+                            {METODOS_PAGO[p.metodo_pago] || p.metodo_pago}
+                          </span>
+                        </td>
+                        <td className="num mono">
+                          <strong style={{ color: 'var(--gold)', fontSize: 15 }}>
+                            {money(p.total_pago)}
+                          </strong>
+                        </td>
+                        <td className="num mono" style={{ color: 'var(--green)' }}>
+                          {money(p.comision_empleado)}
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            onClick={() =>
+                              setTicketExitoso({
+                                cita: p.cita,
+                                metodo: p.metodo_pago,
+                                resultado: p,
+                                productosComprados: (p.productos || []).map((x) => ({
+                                  producto: x.producto || { nombre: 'Producto' },
+                                  cantidad: x.cantidad,
+                                })),
+                                fecha: new Date(p.created_at),
+                              })
+                            }
+                            title="Ver recibo de pago"
+                          >
+                            <Icon name="receipt" size={14} /> Ver
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan="5">Total Acumulado Hoy</td>
+                    <td className="num mono" style={{ color: 'var(--gold)', fontSize: 16 }}>
+                      {money(metricasCaja.totalRecaudado)}
+                    </td>
+                    <td className="num mono" style={{ color: 'var(--green)', fontSize: 16 }}>
+                      {money(metricasCaja.totalComisiones)}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </section>
+        </>
       )}
 
       {/* Modal de Comprobante / Recibo Tras Pago Exitoso */}
