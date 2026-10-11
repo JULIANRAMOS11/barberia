@@ -1,7 +1,7 @@
 -- =====================================================================
 --  BARBERÍA SaaS — Esquema completo para Supabase (PostgreSQL)
 --  Ejecutar en: Supabase Dashboard > SQL Editor > New query > Run
---  Orden: 1) schema.sql   2) seed.sql
+--  Orden: 1) schema.sql   2) migracion_2026_10.sql   3) seed.sql
 -- =====================================================================
 
 create extension if not exists pgcrypto;

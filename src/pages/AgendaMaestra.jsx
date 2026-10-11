@@ -524,7 +524,7 @@ export default function AgendaMaestra() {
                   })
                   toast.success('Atención iniciada. Aparece en atención en la agenda.')
                   setModalWalkIn(false)
-                  cargarAgenda()
+                  cargarCitas()
                 } catch (err) {
                   toast.error(err)
                 } finally {

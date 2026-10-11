@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Icon from '../components/Icon'
 import { Avatar, Empty, Modal, Spinner } from '../components/ui'
+import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/api'
 import { AREAS, METODOS_PAGO } from '../lib/constants'
@@ -9,6 +10,8 @@ import { duracion, fechaHora, money } from '../lib/format'
 
 export default function Caja() {
   const toast = useToast()
+  const { profile } = useAuth()
+  const comisionIncluyeProductos = Boolean(profile?.barberia?.comision_incluye_productos)
   const [searchParams] = useSearchParams()
   const preselectCitaId = searchParams.get('cita')
 
@@ -111,7 +114,7 @@ export default function Caja() {
     const total = subtotalServicio + subtotalProductos
     const porcentaje = Number(selectedCita.empleado?.porcentaje_comision ?? 40)
     // Regla recomendada: comisión calculada sobre el servicio (o según configuración de barbería)
-    const comision = Math.round((subtotalServicio * porcentaje) / 100)
+    const comision = Math.round(((subtotalServicio + (comisionIncluyeProductos ? subtotalProductos : 0)) * porcentaje) / 100)
 
     return {
       subtotalServicio,
@@ -120,7 +123,7 @@ export default function Caja() {
       comision,
       porcentaje,
     }
-  }, [selectedCita, productosVenta, inventario])
+  }, [selectedCita, productosVenta, inventario, comisionIncluyeProductos])
 
   const handleProcesarPago = async () => {
     if (!selectedCita) {
@@ -232,7 +235,7 @@ export default function Caja() {
 
     const total = subtotalServicio + subtotalProductos
     const porcentaje = Number(emp?.porcentaje_comision ?? 45)
-    const comision = Math.round((subtotalServicio * porcentaje) / 100)
+    const comision = Math.round(((subtotalServicio + (comisionIncluyeProductos ? subtotalProductos : 0)) * porcentaje) / 100)
     const gananciaLocal = total - comision
 
     return {
@@ -246,7 +249,7 @@ export default function Caja() {
       comision,
       gananciaLocal,
     }
-  }, [cobroDirectoForm, empleados, servicios, inventario])
+  }, [cobroDirectoForm, empleados, servicios, inventario, comisionIncluyeProductos])
 
   const handleGuardarCobroDirecto = async (e) => {
     e.preventDefault()
@@ -261,17 +264,25 @@ export default function Caja() {
       const extras = servicios.filter((s) => cobroDirectoForm.servicios_extras.includes(s.id))
       const nombresServicios = [serv?.nombre, ...extras.map((x) => x.nombre)].filter(Boolean).join(' + ')
 
-      // 1. Crear la cita
+      // 1. Crear la cita ya completada. Se ubica en el tiempo en que se realizó el servicio
+      //    (termina ahora) para no chocar con la próxima cita agendada del profesional.
+      const inicio = new Date(Date.now() - Number(serv?.duracion_minutos || 30) * 60000)
+      inicio.setSeconds(0, 0)
       const cita = await api.createCita({
         cliente: cobroDirectoForm.cliente.trim() || 'Cliente Mostrador',
         empleado_id: cobroDirectoForm.empleado_id,
         servicio_id: cobroDirectoForm.servicio_id,
-        fecha_hora: new Date(),
+        fecha_hora: inicio,
+        estado: 'completada',
         notas: (cobroDirectoForm.notas ? `${cobroDirectoForm.notas} · ` : '') + (extras.length ? `Extras: ${extras.map(e => e.nombre).join(', ')}` : 'Cobro directo en mostrador'),
       })
 
-      // Asegurar estado completada para cobro
-      await api.updateCita(cita.id, { estado: 'completada' })
+      // Si hay servicios adicionales, el precio de la cita debe incluirlos para que
+      // procesar_pago registre el total correcto y la comisión sobre todos los servicios.
+      const precioServicios = calculosDirecto.subtotalServicio
+      if (cita.estado !== 'completada' || Number(cita.precio) !== precioServicios) {
+        await api.updateCita(cita.id, { estado: 'completada', precio: precioServicios })
+      }
 
       // 2. Procesar el pago con el método elegido
       const productosPayload = Object.entries(cobroDirectoForm.productosVenta).map(([producto_id, cantidad]) => ({

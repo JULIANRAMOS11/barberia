@@ -24,7 +24,22 @@ const DIAS_DEFAULT_MAP = {
 export function getEmpleadoHorario(emp) {
   if (!emp) return { diaId: null, diaNombre: 'Sin descanso fijo', horario: '9:00 AM - 9:00 PM' }
 
-  // 1. Revisar si viene guardado en localStorage
+  // 1. Fuente oficial: columnas en la base de datos (migracion_2026_10.sql).
+  //    Si el admin ya guardó el horario, horario_trabajo deja de ser null.
+  const tieneDatosBD =
+    (emp.dia_descanso !== undefined && emp.dia_descanso !== null) ||
+    (emp.horario_trabajo !== undefined && emp.horario_trabajo !== null)
+  if (tieneDatosBD) {
+    const id = emp.dia_descanso === null || emp.dia_descanso === undefined ? null : Number(emp.dia_descanso)
+    const diaObj = DIAS_SEMANA.find((d) => d.id === id)
+    return {
+      diaId: id,
+      diaNombre: diaObj ? diaObj.label : 'Sin descanso fijo',
+      horario: emp.horario_trabajo || '9:00 AM - 9:00 PM',
+    }
+  }
+
+  // 2. Respaldo: guardado localmente en este navegador
   try {
     const raw = localStorage.getItem(`${STORAGE_PREFIX}${emp.id}`)
     if (raw) {
@@ -38,16 +53,6 @@ export function getEmpleadoHorario(emp) {
     }
   } catch {
     // ignorar error de parseo
-  }
-
-  // 2. Si el objeto ya tiene dia_descanso asignado directamente
-  if (emp.dia_descanso !== undefined && emp.dia_descanso !== null) {
-    const diaObj = DIAS_SEMANA.find((d) => d.id === Number(emp.dia_descanso))
-    return {
-      diaId: Number(emp.dia_descanso),
-      diaNombre: diaObj ? diaObj.label : 'Sin descanso fijo',
-      horario: emp.horario_trabajo || '9:00 AM - 9:00 PM',
-    }
   }
 
   // 3. Fallback inteligente basado en nombre o ID

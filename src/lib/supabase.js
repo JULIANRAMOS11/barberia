@@ -7,7 +7,10 @@ const DEFAULT_ANON_KEY =
 const url = import.meta.env.VITE_SUPABASE_URL || DEFAULT_URL
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_ANON_KEY
 
-// Si hay credenciales (locales o en Vercel) corre conectado a Supabase
-export const isDemo = !url || !anonKey
+// Permitir alternar entre Supabase en vivo y Demo local (offline)
+const forcedDemo = typeof window !== 'undefined' && localStorage.getItem('barberos_force_demo') === 'true'
 
-export const supabase = isDemo ? null : createClient(url, anonKey)
+// Si no hay credenciales o se forzó demo corre con demoApi local
+export const isDemo = forcedDemo || !url || !anonKey
+
+export const supabase = (!url || !anonKey) ? null : createClient(url, anonKey)

@@ -2,6 +2,7 @@
 // El aislamiento por barbería lo garantiza el RLS en la base de datos:
 // ninguna consulta necesita enviar barberia_id (se rellena por DEFAULT mi_barberia_id()).
 import { supabase } from '../supabase'
+import { HORARIO } from '../constants'
 
 function traducir(error) {
   if (!error) return 'Error desconocido'
@@ -19,7 +20,13 @@ function check({ data, error }) {
 }
 
 const CITA_SELECT =
-  '*, empleado:usuarios(id, nombre, area), servicio:servicios(id, nombre, precio, duracion_minutos)'
+  '*, empleado:usuarios(id, nombre, area, porcentaje_comision), servicio:servicios(id, nombre, precio, duracion_minutos)'
+
+// Columnas nuevas (migracion_2026_10.sql). Si aún no existen en la BD, se reintenta sin ellas.
+const COLUMNAS_HORARIO = ['dia_descanso', 'horario_trabajo']
+const faltaColumna = (error) =>
+  Boolean(error) && (error.code === 'PGRST204' || error.code === '42703') &&
+  COLUMNAS_HORARIO.some((c) => error.message?.includes(c))
 
 const CAJA_SELECT = `*,
   cita:citas(cliente, fecha_hora, empleado:usuarios(id, nombre, area), servicio:servicios(nombre)),
@@ -67,7 +74,13 @@ export const supabaseApi = {
     return check(await q)
   },
   async updateUsuario(id, patch) {
-    return check(await supabase.from('usuarios').update(patch).eq('id', id).select().single())
+    let res = await supabase.from('usuarios').update(patch).eq('id', id).select().single()
+    if (faltaColumna(res.error)) {
+      const p = { ...patch }
+      COLUMNAS_HORARIO.forEach((c) => delete p[c])
+      res = await supabase.from('usuarios').update(p).eq('id', id).select().single()
+    }
+    return check(res)
   },
   async listInvitaciones() {
     return check(await supabase.from('invitaciones').select('*').eq('usada', false).order('created_at'))
@@ -111,6 +124,7 @@ export const supabaseApi = {
       servicio_id: c.servicio_id,
       fecha_hora: new Date(c.fecha_hora).toISOString(),
       notas: c.notas || null,
+      ...(c.estado ? { estado: c.estado } : {}),
       // duracion/precio/fecha_fin los calcula el trigger; se envían para satisfacer NOT NULL
       duracion_minutos: 0,
       precio: 0,
@@ -176,11 +190,15 @@ export const supabaseApi = {
 
   // ---------------- Reserva Pública (WhatsApp / Clientes) ----------------
   async getPublicCatalog() {
-    const [barberias, servicios, empleados] = await Promise.all([
+    const empleadosQuery = (cols) =>
+      supabase.from('usuarios').select(cols).eq('rol', 'empleado').eq('activo', true).order('nombre')
+    const [barberias, servicios, empleadosRes] = await Promise.all([
       supabase.from('barberias').select('id, nombre').limit(1).maybeSingle(),
       supabase.from('servicios').select('*').eq('activo', true).order('nombre'),
-      supabase.from('usuarios').select('id, nombre, area').eq('rol', 'empleado').eq('activo', true).order('nombre'),
+      empleadosQuery('id, nombre, area, dia_descanso, horario_trabajo'),
     ])
+    let empleados = empleadosRes
+    if (empleados.error) empleados = await empleadosQuery('id, nombre, area')
     return {
       barberia: check(barberias),
       servicios: check(servicios),
@@ -193,15 +211,23 @@ export const supabaseApi = {
     const targetDayEnd = new Date(targetDay)
     targetDayEnd.setDate(targetDayEnd.getDate() + 1)
 
-    const citas = check(
-      await supabase
+    // RPC segura: solo devuelve rangos ocupados (sin nombres ni teléfonos de clientes)
+    let res = await supabase.rpc('disponibilidad_publica', {
+      p_empleado_id: empleadoId,
+      p_desde: targetDay.toISOString(),
+      p_hasta: targetDayEnd.toISOString(),
+    })
+    if (res.error) {
+      // Compatibilidad si la migración aún no se ha ejecutado
+      res = await supabase
         .from('citas')
         .select('fecha_hora, fecha_fin')
         .eq('empleado_id', empleadoId)
         .neq('estado', 'cancelada')
         .gte('fecha_hora', targetDay.toISOString())
         .lt('fecha_hora', targetDayEnd.toISOString())
-    )
+    }
+    const citas = check(res) || []
 
     const slots = []
     const now = new Date()
@@ -209,14 +235,14 @@ export const supabaseApi = {
       now.getMonth() === targetDay.getMonth() &&
       now.getDate() === targetDay.getDate()
 
-    for (let h = 8; h < 20; h++) {
+    for (let h = HORARIO.inicio; h < HORARIO.fin; h++) {
       for (const m of [0, 15, 30, 45]) {
         const slotStart = new Date(targetDay)
         slotStart.setHours(h, m, 0, 0)
         const slotEnd = new Date(slotStart.getTime() + duracionMinutos * 60000)
 
         const limitFin = new Date(targetDay)
-        limitFin.setHours(20, 0, 0, 0)
+        limitFin.setHours(HORARIO.fin, 0, 0, 0)
         if (slotEnd > limitFin) continue
 
         if (isToday && slotStart.getTime() <= now.getTime() + 15 * 60000) continue

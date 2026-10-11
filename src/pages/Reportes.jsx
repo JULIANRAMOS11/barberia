@@ -63,6 +63,8 @@ export default function Reportes() {
   // Filtrado por método de pago si aplica
   const movimientosFiltrados = useMemo(() => {
     if (!metodoFiltro) return movimientos
+    // 'nequi' es el valor histórico de transferencia: se agrupa con 'transferencia'
+    if (metodoFiltro === 'transferencia') return movimientos.filter((m) => ['transferencia', 'nequi'].includes(m.metodo_pago))
     return movimientos.filter((m) => m.metodo_pago === metodoFiltro)
   }, [movimientos, metodoFiltro])
 
@@ -77,7 +79,10 @@ export default function Reportes() {
       .filter((m) => m.metodo_pago === 'efectivo')
       .reduce((s, m) => s + Number(m.total_pago || 0), 0)
     const totalNequi = movimientosFiltrados
-      .filter((m) => m.metodo_pago === 'nequi')
+      .filter((m) => ['transferencia', 'nequi'].includes(m.metodo_pago))
+      .reduce((s, m) => s + Number(m.total_pago || 0), 0)
+    const totalTarjeta = movimientosFiltrados
+      .filter((m) => m.metodo_pago === 'tarjeta')
       .reduce((s, m) => s + Number(m.total_pago || 0), 0)
 
     return {
@@ -88,6 +93,7 @@ export default function Reportes() {
       gananciaLocal,
       totalEfectivo,
       totalNequi,
+      totalTarjeta,
       totalCortes: movimientosFiltrados.length,
     }
   }, [movimientosFiltrados])
@@ -275,7 +281,8 @@ export default function Reportes() {
             >
               <option value="">Todos los Métodos</option>
               <option value="efectivo">Solo Efectivo</option>
-              <option value="nequi">Solo Nequi</option>
+              <option value="transferencia">Solo Transferencia</option>
+              <option value="tarjeta">Solo Tarjeta</option>
             </select>
           </div>
         </div>
@@ -308,7 +315,7 @@ export default function Reportes() {
           accent="violet"
           label="Desglose de Caja"
           value={`${money(metricas.totalEfectivo)}`}
-          hint={`Efectivo: ${money(metricas.totalEfectivo)} · Nequi: ${money(metricas.totalNequi)}`}
+          hint={`Efectivo: ${money(metricas.totalEfectivo)} · Transf.: ${money(metricas.totalNequi)} · Tarjeta: ${money(metricas.totalTarjeta)}`}
         />
       </div>
 

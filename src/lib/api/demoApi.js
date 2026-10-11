@@ -276,7 +276,7 @@ export const demoApi = {
     const ini = new Date(c.fecha_hora)
     const row = {
       id: uid(), barberia_id: me.barberia_id, cliente: c.cliente, cliente_telefono: c.cliente_telefono || null,
-      empleado_id: c.empleado_id, servicio_id: c.servicio_id, estado: 'pendiente',
+      empleado_id: c.empleado_id, servicio_id: c.servicio_id, estado: c.estado || 'pendiente',
       fecha_hora: ini.toISOString(), duracion_minutos: serv.duracion_minutos,
       fecha_fin: new Date(ini.getTime() + serv.duracion_minutos * 60000).toISOString(),
       precio: serv.precio, notas: c.notas || null, created_at: new Date().toISOString(),

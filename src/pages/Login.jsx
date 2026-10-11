@@ -139,9 +139,36 @@ export default function Login() {
               </div>
               <p className="faint small mt-8">
                 {isDemo
-                  ? 'Contraseña de todas las cuentas demo: demo123'
-                  : 'Cuentas demo listas para probar en vivo (1 clic o contraseña: Password123!)'}
+                  ? 'Modo Demo activo: datos locales simulados listos para mostrar.'
+                  : 'Conectado a Supabase: prueba en vivo con 1 clic (o contraseña: Password123!).'}
               </p>
+
+              <div
+                className="row-between mt-16"
+                style={{
+                  padding: '8px 12px',
+                  background: 'var(--surface-2)',
+                  borderRadius: 'var(--radius)',
+                  border: '1px solid var(--border)',
+                  fontSize: 12,
+                }}
+              >
+                <span className="row" style={{ gap: 6, alignItems: 'center' }}>
+                  <span style={{ color: isDemo ? 'var(--amber)' : 'var(--green)' }}>●</span>
+                  {isDemo ? 'Modo Demo Local (Offline)' : 'Base de Datos Supabase (En vivo)'}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-xs"
+                  onClick={() => {
+                    localStorage.setItem('barberos_force_demo', isDemo ? 'false' : 'true')
+                    window.location.reload()
+                  }}
+                  id="login-toggle-db-mode"
+                >
+                  {isDemo ? 'Cambiar a Supabase' : 'Cambiar a Demo Local'}
+                </button>
+              </div>
             </>
           )}
         </div>

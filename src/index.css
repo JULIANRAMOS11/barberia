@@ -389,6 +389,8 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.8); cur
 .badge-rose { background: var(--rose-soft); color: var(--rose); }
 .badge-efectivo { background: var(--green-soft); color: var(--green); }
 .badge-nequi { background: hsla(300, 70%, 65%, 0.15); color: hsl(300, 75%, 75%); }
+.badge-transferencia { background: hsla(300, 70%, 65%, 0.15); color: hsl(300, 75%, 75%); }
+.badge-tarjeta { background: hsla(210, 100%, 65%, 0.15); color: hsl(210, 100%, 72%); }
 
 /* ---------------------------------------------------------------------
    Tablas

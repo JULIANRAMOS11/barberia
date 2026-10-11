@@ -92,17 +92,25 @@ export default function Configuracion() {
     e.preventDefault()
     setGuardando(true)
     try {
+      const diaDescanso =
+        modalEditarEmpleado.dia_descanso === '' || modalEditarEmpleado.dia_descanso == null
+          ? null
+          : Number(modalEditarEmpleado.dia_descanso)
+      const horarioTrabajo = modalEditarEmpleado.horario_trabajo || '9:00 AM - 9:00 PM'
+
       await api.updateUsuario(modalEditarEmpleado.id, {
         nombre: modalEditarEmpleado.nombre,
         area: modalEditarEmpleado.area,
         porcentaje_comision: Number(modalEditarEmpleado.porcentaje_comision),
         activo: modalEditarEmpleado.activo,
+        dia_descanso: diaDescanso,
+        horario_trabajo: horarioTrabajo,
       })
 
-      // Guardar descanso y horario
+      // Respaldo local (por si la migración de horarios aún no se ha ejecutado)
       saveEmpleadoHorario(modalEditarEmpleado.id, {
-        diaId: modalEditarEmpleado.dia_descanso,
-        horario: modalEditarEmpleado.horario_trabajo || '9:00 AM - 9:00 PM',
+        diaId: diaDescanso,
+        horario: horarioTrabajo,
       })
 
       toast.success('Datos de empleado y horario actualizados')
