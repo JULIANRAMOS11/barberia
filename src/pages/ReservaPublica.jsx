@@ -137,7 +137,7 @@ export default function ReservaPublica() {
       `💰 Valor: ${money(servicioSeleccionado?.precio)}\n\n` +
       `¿Podrían confirmarme la reserva? ¡Muchas gracias!`
     )
-    return `https://wa.me/?text=${mensaje}`
+    return `${REDES_SOCIALES.whatsapp}?text=${mensaje}`
   }
 
   return (

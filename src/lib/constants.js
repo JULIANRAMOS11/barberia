@@ -48,6 +48,6 @@ export const REDES_SOCIALES = {
   instagram: 'https://instagram.com/elitebarberstudio',
   tiktok: 'https://tiktok.com/@elitebarberstudio',
   facebook: 'https://facebook.com/elitebarberstudio',
-  whatsapp: 'https://wa.me/573001234567',
-  telefono: '+57 300 123 4567',
+  whatsapp: 'https://wa.me/573124614214',
+  telefono: '+57 312 461 4214',
 }
