@@ -1425,3 +1425,109 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.8); cur
   .landing-footer-grid { grid-template-columns: 1fr; gap: 24px; }
 }
 
+/* Caja Simplificada - Estilos Modernos y Táctiles */
+.caja-tabs-nav {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.caja-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s var(--ease);
+}
+.caja-tab-btn:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+.caja-tab-btn.active {
+  background: linear-gradient(135deg, rgba(202, 138, 4, 0.15), rgba(234, 179, 8, 0.05));
+  border-color: var(--gold);
+  box-shadow: 0 4px 18px rgba(202, 138, 4, 0.12);
+}
+.caja-tab-btn .tab-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+.caja-tab-btn.active .tab-title {
+  color: var(--gold);
+}
+.caja-tab-btn .tab-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.citas-search-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: var(--surface);
+  border: 1px solid var(--gold);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  max-height: 250px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+.citas-search-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.citas-search-item:hover {
+  background: var(--surface-hover);
+}
+.citas-search-item:last-child {
+  border-bottom: none;
+}
+
+.caja-prod-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.caja-prod-card {
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.caja-prod-card:hover {
+  border-color: var(--gold);
+  background: var(--surface-2);
+}
+.caja-prod-card.selected {
+  border-color: var(--gold);
+  background: rgba(202, 138, 4, 0.12);
+}
+
+@media (max-width: 768px) {
+  .caja-tabs-nav {
+    grid-template-columns: 1fr;
+  }
+}
+
+

@@ -10,11 +10,12 @@ import { addDays, fechaHora, money, startOfMonth, startOfWeek, toDateInput } fro
 export default function Reportes() {
   const toast = useToast()
   const [searchParams] = useSearchParams()
-  const [periodo, setPeriodo] = useState(() => (searchParams.get('corte') === 'sabado' ? 'sabado' : 'hoy')) // hoy | sabado | semana | mes | personalizado
+  const [periodo, setPeriodo] = useState(() => (searchParams.get('corte') === 'sabado' ? 'sabado' : 'hoy')) // hoy | sabado | semana | quincena | mes | personalizado
   const [desde, setDesde] = useState(() => toDateInput(new Date()))
   const [hasta, setHasta] = useState(() => toDateInput(new Date()))
   const [empleadoFiltro, setEmpleadoFiltro] = useState('')
   const [metodoFiltro, setMetodoFiltro] = useState('')
+  const [busquedaCliente, setBusquedaCliente] = useState('')
   const [movimientos, setMovimientos] = useState([])
   const [empleados, setEmpleados] = useState([])
   const [loading, setLoading] = useState(true)
@@ -40,6 +41,16 @@ export default function Reportes() {
     } else if (periodo === 'semana') {
       setDesde(toDateInput(startOfWeek(hoy)))
       setHasta(toDateInput(hoy))
+    } else if (periodo === 'quincena') {
+      const dia = hoy.getDate()
+      const primerDia = startOfMonth(hoy)
+      if (dia <= 15) {
+        setDesde(toDateInput(primerDia))
+        setHasta(toDateInput(new Date(hoy.getFullYear(), hoy.getMonth(), 15)))
+      } else {
+        setDesde(toDateInput(new Date(hoy.getFullYear(), hoy.getMonth(), 16)))
+        setHasta(toDateInput(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0)))
+      }
     } else if (periodo === 'mes') {
       setDesde(toDateInput(startOfMonth(hoy)))
       setHasta(toDateInput(hoy))
@@ -68,13 +79,22 @@ export default function Reportes() {
     cargarCaja()
   }, [cargarCaja])
 
-  // Filtrado por método de pago si aplica
+  // Filtrado por método de pago y por nombre/celular de cliente
   const movimientosFiltrados = useMemo(() => {
-    if (!metodoFiltro) return movimientos
-    // 'nequi' es el valor histórico de transferencia: se agrupa con 'transferencia'
-    if (metodoFiltro === 'transferencia') return movimientos.filter((m) => ['transferencia', 'nequi'].includes(m.metodo_pago))
-    return movimientos.filter((m) => m.metodo_pago === metodoFiltro)
-  }, [movimientos, metodoFiltro])
+    let list = movimientos
+    if (metodoFiltro) {
+      if (metodoFiltro === 'transferencia') list = list.filter((m) => ['transferencia', 'nequi'].includes(m.metodo_pago))
+      else list = list.filter((m) => m.metodo_pago === metodoFiltro)
+    }
+    if (busquedaCliente.trim()) {
+      const q = busquedaCliente.toLowerCase().trim()
+      list = list.filter((m) =>
+        m.cita?.cliente?.toLowerCase().includes(q) ||
+        (m.cita?.cliente_telefono && m.cita.cliente_telefono.includes(q))
+      )
+    }
+    return list
+  }, [movimientos, metodoFiltro, busquedaCliente])
 
   // Métricas financieras
   const metricas = useMemo(() => {
@@ -155,16 +175,18 @@ export default function Reportes() {
 
       // Hoja 2: Movimientos Detallados de Caja
       const datosMovimientos = movimientosFiltrados.map((m) => ({
-        Fecha: fechaHora(m.created_at),
+        Fecha: new Date(m.created_at).toLocaleDateString('es-CO'),
+        Hora: hora(m.created_at),
         Cliente: m.cita?.cliente || 'Cliente',
+        'Celular / WhatsApp': m.cita?.cliente_telefono || 'Sin celular',
+        '¿Cliente Nuevo?': m.cita?.notas?.includes('[Cliente Nuevo]') ? 'SÍ' : 'NO',
         'Servicio Realizado': m.cita?.servicio?.nombre || 'Servicio',
-        Empleado: m.empleado?.nombre || 'Empleado',
+        'Profesional / Barbero': m.empleado?.nombre || 'Empleado',
         'Método Pago': METODOS_PAGO[m.metodo_pago] || m.metodo_pago,
-        'Total Servicio': Number(m.total_servicio || 0),
-        'Total Productos': Number(m.total_productos || 0),
+        'Notas / Ref Transferencia': m.cita?.notas || '',
         'Total Cobrado': Number(m.total_pago || 0),
         'Comisión Empleado': Number(m.comision_empleado || 0),
-        'Utilidad Local': Number(m.total_pago || 0) - Number(m.comision_empleado || 0),
+        'Utilidad Barbería': Number(m.total_pago || 0) - Number(m.comision_empleado || 0),
       }))
 
       // Crear Libro Excel
@@ -231,6 +253,13 @@ export default function Reportes() {
               Esta Semana
             </button>
             <button
+              className={periodo === 'quincena' ? 'active' : ''}
+              onClick={() => setPeriodo('quincena')}
+              id="rep-tab-quincena"
+            >
+              Quincenal
+            </button>
+            <button
               className={periodo === 'mes' ? 'active' : ''}
               onClick={() => setPeriodo('mes')}
               id="rep-tab-mes"
@@ -246,7 +275,18 @@ export default function Reportes() {
             </button>
           </div>
 
-          <div className="row wrap report-filters" style={{ gap: 10 }}>
+          <div className="row wrap report-filters" style={{ gap: 10, alignItems: 'center' }}>
+            {/* Buscador de cliente o celular */}
+            <input
+              type="text"
+              className="input input-sm"
+              style={{ width: 200 }}
+              placeholder="🔍 Buscar cliente / celular..."
+              value={busquedaCliente}
+              onChange={(e) => setBusquedaCliente(e.target.value)}
+              aria-label="Buscar por cliente o celular"
+            />
+
             {periodo === 'personalizado' && (
               <>
                 <input
@@ -279,7 +319,7 @@ export default function Reportes() {
               id="rep-filtro-empleado"
               aria-label="Filtrar por empleado"
             >
-              <option value="">Todos los Empleados</option>
+              <option value="">Todos los Profesionales</option>
               {empleados.map((emp) => (
                 <option key={emp.id} value={emp.id}>
                   {emp.nombre} ({AREAS[emp.area]?.label || emp.area})
@@ -483,7 +523,17 @@ export default function Reportes() {
                   <tr key={m.id}>
                     <td className="mono faint small">{fechaHora(m.created_at)}</td>
                     <td>
-                      <strong>{m.cita?.cliente || 'Cliente'}</strong>
+                      <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                        <strong>{m.cita?.cliente || 'Cliente'}</strong>
+                        {m.cita?.notas?.includes('[Cliente Nuevo]') && (
+                          <span className="badge badge-gold" style={{ fontSize: 10, padding: '1px 5px' }}>
+                            ⭐ Nuevo
+                          </span>
+                        )}
+                      </div>
+                      {m.cita?.cliente_telefono && (
+                        <div className="faint small mono">📱 {m.cita.cliente_telefono}</div>
+                      )}
                     </td>
                     <td>
                       <div>{m.cita?.servicio?.nombre || 'Servicio'}</div>

@@ -5,78 +5,111 @@ import { Avatar, Empty, Modal, Spinner, StatCard } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/api'
-import { AREAS, METODOS_PAGO, SERVICIOS_EXTRAS_COMUNES } from '../lib/constants'
-import { addDays, duracion, fechaHora, hora, money, startOfDay } from '../lib/format'
+import { AREAS, METODOS_PAGO } from '../lib/constants'
+import { addDays, fechaHora, hora, money, startOfDay } from '../lib/format'
 
 export default function Caja() {
   const toast = useToast()
   const { profile } = useAuth()
-  const comisionIncluyeProductos = Boolean(profile?.barberia?.comision_incluye_productos)
   const [searchParams] = useSearchParams()
   const preselectCitaId = searchParams.get('cita')
 
-  const [citasCompletadas, setCitasCompletadas] = useState([])
+  // Datos del sistema
+  const [citasHoy, setCitasHoy] = useState([])
   const [inventario, setInventario] = useState([])
   const [empleados, setEmpleados] = useState([])
   const [servicios, setServicios] = useState([])
-  const [selectedCita, setSelectedCita] = useState(null)
-  const [productosVenta, setProductosVenta] = useState({}) // { [productoId]: cantidad }
-  const [extrasSeleccionados, setExtrasSeleccionados] = useState([]) // extras del servicio agendado
-  const [adicionalManual, setAdicionalManual] = useState(0) // valor extra manual
-  const [conceptoAdicional, setConceptoAdicional] = useState('')
-  const [metodoPago, setMetodoPago] = useState('efectivo')
   const [pagosHoy, setPagosHoy] = useState([])
   const [loading, setLoading] = useState(true)
   const [processing, setProcessing] = useState(false)
   const [ticketExitoso, setTicketExitoso] = useState(null)
-  const [busquedaProducto, setBusquedaProducto] = useState('')
 
-  // Modal de cobro directo en mostrador
-  const [modalCobroDirecto, setModalCobroDirecto] = useState(false)
-  const [areaDirecto, setAreaDirecto] = useState('barberia')
-  const [cobroDirectoForm, setCobroDirectoForm] = useState({
+  // Modo de operación de la caja: 'servicio' | 'producto' | 'grupo'
+  const [pestañaCaja, setPestañaCaja] = useState('servicio')
+
+  // --- 1. Formulario de Cobro de Servicio (Cero Enredos) ---
+  const [citaSeleccionadaId, setCitaSeleccionadaId] = useState(null)
+  const [busquedaCita, setBusquedaCita] = useState('')
+  const [areaServicio, setAreaServicio] = useState('barberia')
+  const [formServicio, setFormServicio] = useState({
     empleado_id: '',
     servicio_id: '',
-    servicios_extras: [],
-    cliente: 'Cliente Mostrador',
-    metodo: 'efectivo',
-    productosVenta: {},
+    precioEditable: 25000,
+    cliente: '',
+    cliente_telefono: '',
+    esNuevo: false,
     notas: '',
+    metodo: 'efectivo',
+    banco: 'Nequi',
+    referenciaComprobante: '',
   })
 
-  // Modal de cobro familiar / grupal (2 o más personas en una sola cuenta)
-  const [modalCobroGrupo, setModalCobroGrupo] = useState(false)
-  const [cobroGrupoForm, setCobroGrupoForm] = useState({
-    responsable: 'Familia Gómez',
+  // --- 2. Formulario de Venta de Productos de Tienda (Caja Aparte) ---
+  const [busquedaProducto, setBusquedaProducto] = useState('')
+  const [productosVentaTienda, setProductosVentaTienda] = useState({}) // { [id]: cantidad }
+  const [formProducto, setFormProducto] = useState({
+    cliente: 'Cliente Mostrador',
+    cliente_telefono: '',
     metodo: 'efectivo',
-    productosVenta: {},
+    banco: 'Nequi',
+    referenciaComprobante: '',
+  })
+
+  // --- 3. Formulario de Cobro Familiar / Grupo ---
+  const [formGrupo, setFormGrupo] = useState({
+    responsable: 'Familia Gómez',
+    cliente_telefono: '',
+    metodo: 'efectivo',
+    banco: 'Nequi',
+    referenciaComprobante: '',
     notas: '',
     miembros: [
-      { id: 'm1', nombre: 'Papá', empleado_id: '', servicio_id: '', servicios_extras: [] },
-      { id: 'm2', nombre: 'Hijo 1', empleado_id: '', servicio_id: '', servicios_extras: [] },
+      { id: 'm1', nombre: 'Papá', empleado_id: '', servicio_id: '', precio: 25000 },
+      { id: 'm2', nombre: 'Hijo 1', empleado_id: '', servicio_id: '', precio: 25000 },
     ],
   })
 
+  // Cargar datos
   const cargarDatos = useCallback(async () => {
     setLoading(true)
     try {
       const hoy = startOfDay(new Date())
       const manana = addDays(hoy, 1)
       const [citas, prods, emps, servs, pagos] = await Promise.all([
-        api.listCitas({ estados: ['completada'] }),
+        api.listCitas({ desde: hoy, hasta: manana }),
         api.listInventario(),
         api.listEquipo({ soloActivos: true }),
         api.listServicios({ soloActivos: true }),
         api.listCaja({ desde: hoy, hasta: manana }),
       ])
-      setCitasCompletadas(citas)
-      setInventario(prods.filter((p) => p.tipo === 'venta'))
+
+      setCitasHoy(citas)
+      setInventario(prods)
       setEmpleados(emps)
       setServicios(servs)
       setPagosHoy(pagos || [])
 
-      setSelectedCita((current) => citas.find((c) => c.id === current?.id)
-        || citas.find((c) => c.id === preselectCitaId) || citas[0] || null)
+      // Inicializar empleado y servicio por defecto si están vacíos
+      const empsBarberia = emps.filter((e) => e.area === 'barberia')
+      const servsBarberia = servs.filter((s) => !s.area || s.area === 'barberia')
+
+      setFormServicio((prev) => {
+        const empId = prev.empleado_id || empsBarberia[0]?.id || emps[0]?.id || ''
+        const servId = prev.servicio_id || servsBarberia[0]?.id || servs[0]?.id || ''
+        const servObj = servs.find((s) => s.id === servId)
+        return {
+          ...prev,
+          empleado_id: empId,
+          servicio_id: servId,
+          precioEditable: prev.precioEditable || Number(servObj?.precio || 25000),
+        }
+      })
+
+      // Si viene con cita precargada en la URL
+      if (preselectCitaId) {
+        const encontrada = citas.find((c) => c.id === preselectCitaId)
+        if (encontrada) seleccionarCitaParaCobro(encontrada)
+      }
     } catch (err) {
       toast.error(err)
     } finally {
@@ -88,29 +121,50 @@ export default function Caja() {
     cargarDatos()
   }, [cargarDatos])
 
-  // Reset productos y extras al cambiar de cita seleccionada
-  useEffect(() => {
-    setProductosVenta({})
-    setExtrasSeleccionados([])
-    setAdicionalManual(0)
-    setConceptoAdicional('')
-  }, [selectedCita?.id])
+  // Cargar cita agendada en el formulario de cobro
+  const seleccionarCitaParaCobro = (cita) => {
+    setCitaSeleccionadaId(cita.id)
+    const emp = empleados.find((e) => e.id === cita.empleado_id)
+    const serv = servicios.find((s) => s.id === cita.servicio_id)
+    if (emp?.area) setAreaServicio(emp.area)
 
-  const toggleExtraCita = (extraItem) => {
-    setExtrasSeleccionados((prev) => {
-      const existe = prev.some((x) => x.id === extraItem.id)
-      if (existe) return prev.filter((x) => x.id !== extraItem.id)
-      return [...prev, extraItem]
-    })
+    setFormServicio((prev) => ({
+      ...prev,
+      empleado_id: cita.empleado_id,
+      servicio_id: cita.servicio_id,
+      precioEditable: Number(cita.precio || serv?.precio || 25000),
+      cliente: cita.cliente || '',
+      cliente_telefono: cita.cliente_telefono || '',
+      esNuevo: cita.notas?.includes('[Cliente Nuevo]') || false,
+      notas: (cita.notas || '').replace(/\[Nequi Ref:[^\]]*\]/g, '').replace(/\[Cliente Nuevo\]/g, '').trim(),
+    }))
+    setBusquedaCita('')
+    toast.success(`Cita de ${cita.cliente} cargada para cobrar.`)
   }
 
-  const productosFiltrados = useMemo(() => {
-    return inventario.filter((p) =>
-      p.nombre.toLowerCase().includes(busquedaProducto.toLowerCase())
-    )
-  }, [inventario, busquedaProducto])
+  const limpiarCitaSeleccionada = () => {
+    setCitaSeleccionadaId(null)
+    setFormServicio((prev) => ({
+      ...prev,
+      cliente: '',
+      cliente_telefono: '',
+      esNuevo: false,
+      notas: '',
+      referenciaComprobante: '',
+    }))
+  }
 
-  // Métricas financieras del día en tiempo real (Arqueo de caja)
+  // Filtrado de citas agendadas de hoy para autocompletar
+  const citasFiltradasBusqueda = useMemo(() => {
+    if (!busquedaCita.trim()) return []
+    const q = busquedaCita.toLowerCase().trim()
+    return citasHoy.filter((c) =>
+      c.cliente?.toLowerCase().includes(q) ||
+      (c.cliente_telefono && c.cliente_telefono.includes(q))
+    ).slice(0, 5)
+  }, [citasHoy, busquedaCita])
+
+  // Métricas financieras del día (Arqueo en tiempo real)
   const metricasCaja = useMemo(() => {
     const totalRecaudado = pagosHoy.reduce((s, p) => s + Number(p.total_pago || 0), 0)
     const efectivo = pagosHoy.filter((p) => p.metodo_pago === 'efectivo').reduce((s, p) => s + Number(p.total_pago || 0), 0)
@@ -129,299 +183,255 @@ export default function Caja() {
     }
   }, [pagosHoy])
 
-  const modificarCantidad = (producto, delta) => {
-    const actual = productosVenta[producto.id] || 0
+  // Empleados y servicios según el área seleccionada (Barbería / Women)
+  const empleadosFiltrados = useMemo(() => {
+    return empleados.filter((e) => e.area === areaServicio)
+  }, [empleados, areaServicio])
+
+  const serviciosFiltrados = useMemo(() => {
+    return servicios.filter((s) => !s.area || s.area === areaServicio)
+  }, [servicios, areaServicio])
+
+  // Al cambiar de servicio en el select, actualizar automáticamente el precio editable
+  const handleCambioServicio = (servId) => {
+    const s = servicios.find((x) => x.id === servId)
+    setFormServicio((prev) => ({
+      ...prev,
+      servicio_id: servId,
+      precioEditable: Number(s?.precio || 25000),
+    }))
+  }
+
+  // Al cambiar de área, ajustar empleado y servicio al nuevo catálogo
+  const handleCambioArea = (nuevaArea) => {
+    setAreaServicio(nuevaArea)
+    const emps = empleados.filter((e) => e.area === nuevaArea)
+    const servs = servicios.filter((s) => !s.area || s.area === nuevaArea)
+    const primerServ = servs[0]
+    setFormServicio((prev) => ({
+      ...prev,
+      empleado_id: emps[0]?.id || prev.empleado_id,
+      servicio_id: primerServ?.id || prev.servicio_id,
+      precioEditable: Number(primerServ?.precio || 25000),
+    }))
+  }
+
+  // Cálculos en tiempo real del cobro de servicio (Comisión exacta al 50%)
+  const calculosServicio = useMemo(() => {
+    const total = Math.max(0, Number(formServicio.precioEditable) || 0)
+    const emp = empleados.find((e) => e.id === formServicio.empleado_id)
+    const serv = servicios.find((s) => s.id === formServicio.servicio_id)
+    const pct = Number(emp?.porcentaje_comision ?? 50)
+    const comision = Math.round((total * pct) / 100)
+    const gananciaLocal = total - comision
+    return {
+      total,
+      emp,
+      serv,
+      porcentaje: pct,
+      comision,
+      gananciaLocal,
+    }
+  }, [formServicio, empleados, servicios])
+
+  // --- PROCESAR COBRO DE CORTE / SERVICIO ---
+  const handleCobrarServicio = async (e) => {
+    e.preventDefault()
+    if (!formServicio.cliente.trim()) {
+      toast.error('Por favor escribe el nombre del cliente.')
+      return
+    }
+    if (!formServicio.cliente_telefono.trim()) {
+      toast.error('El número de celular es obligatorio para guardar el contacto.')
+      return
+    }
+    if (!formServicio.empleado_id || !formServicio.servicio_id) {
+      toast.error('Selecciona el profesional y el servicio.')
+      return
+    }
+
+    setProcessing(true)
+    try {
+      const now = new Date()
+      const emp = calculosServicio.emp
+      const serv = calculosServicio.serv
+      const precioFinal = calculosServicio.total
+
+      // Preparar notas del cobro (con ref de transferencia y cliente nuevo)
+      const partesNota = []
+      if (formServicio.esNuevo) partesNota.push('[Cliente Nuevo]')
+      if (formServicio.metodo === 'transferencia' && formServicio.referenciaComprobante.trim()) {
+        partesNota.push(`[${formServicio.banco} Ref: ${formServicio.referenciaComprobante.trim()}]`)
+      }
+      if (formServicio.notas.trim()) partesNota.push(formServicio.notas.trim())
+      const notasFinales = partesNota.join(' · ')
+
+      let idCitaACobrar = citaSeleccionadaId
+
+      // 1. Si no viene de una cita agendada, crear la cita completada al instante
+      if (!idCitaACobrar) {
+        const durMin = Number(serv?.duracion_minutos || 30)
+        const inicio = new Date(now.getTime() - durMin * 60000)
+        inicio.setSeconds(0, 0)
+
+        const nuevaCita = await api.createCita({
+          barberia_id: serv?.barberia_id,
+          cliente: formServicio.cliente.trim(),
+          cliente_telefono: formServicio.cliente_telefono.trim(),
+          empleado_id: formServicio.empleado_id,
+          servicio_id: formServicio.servicio_id,
+          fecha_hora: inicio,
+          estado: 'completada',
+          precio: precioFinal,
+          notas: notasFinales || 'Cobro directo en caja',
+        })
+        idCitaACobrar = nuevaCita.id
+      } else {
+        // Si ya existía, sincronizar cliente, teléfono, estado, notas y precio editable
+        await api.updateCita(idCitaACobrar, {
+          cliente: formServicio.cliente.trim(),
+          cliente_telefono: formServicio.cliente_telefono.trim(),
+          estado: 'completada',
+          precio: precioFinal,
+          notas: notasFinales,
+        })
+      }
+
+      // 2. Procesar pago en caja
+      const resultado = await api.procesarPago({
+        citaId: idCitaACobrar,
+        metodo: formServicio.metodo,
+        productos: [],
+      })
+
+      toast.success(`¡Cobro de ${money(precioFinal)} registrado con éxito!`)
+
+      // Mostrar ticket
+      setTicketExitoso({
+        cliente: formServicio.cliente.trim(),
+        telefono: formServicio.cliente_telefono.trim(),
+        profesional: emp?.nombre || 'Profesional',
+        servicio: serv?.nombre || 'Servicio',
+        precio: precioFinal,
+        metodo: formServicio.metodo,
+        banco: formServicio.banco,
+        referencia: formServicio.referenciaComprobante,
+        esNuevo: formServicio.esNuevo,
+        comision: calculosServicio.comision,
+        gananciaLocal: calculosServicio.gananciaLocal,
+        fecha: new Date(),
+      })
+
+      // Resetear campos del cliente
+      limpiarCitaSeleccionada()
+      await cargarDatos()
+    } catch (err) {
+      toast.error(err)
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  // --- 2. VENTA DE PRODUCTOS (TIENDA SEPARADA) ---
+  const modificarCantidadTienda = (producto, delta) => {
+    const actual = productosVentaTienda[producto.id] || 0
     const nuevo = actual + delta
     if (nuevo < 0) return
     if (nuevo > producto.stock_actual) {
-      toast.error(`Solo hay ${producto.stock_actual} unidades disponibles en stock de "${producto.nombre}".`)
+      toast.error(`Solo hay ${producto.stock_actual} unidades en inventario de "${producto.nombre}".`)
       return
     }
-    setProductosVenta((prev) => {
+    setProductosVentaTienda((prev) => {
       const copia = { ...prev }
-      if (nuevo === 0) {
-        delete copia[producto.id]
-      } else {
-        copia[producto.id] = nuevo
-      }
+      if (nuevo === 0) delete copia[producto.id]
+      else copia[producto.id] = nuevo
       return copia
     })
   }
 
-  // Cálculos en tiempo real con aislamiento de comisión (0% productos para el barbero)
-  const calculos = useMemo(() => {
-    if (!selectedCita) {
-      return {
-        subtotalBaseServicio: 0,
-        subtotalExtras: 0,
-        subtotalServicio: 0,
-        subtotalProductos: 0,
-        total: 0,
-        comision: 0,
-        gananciaLocalServicios: 0,
-        gananciaLocalProductos: 0,
-        gananciaLocalTotal: 0,
-        porcentaje: 0,
-      }
-    }
+  const productosVentaFiltrados = useMemo(() => {
+    const lista = inventario.filter((p) => p.tipo === 'venta')
+    if (!busquedaProducto.trim()) return lista
+    const q = busquedaProducto.toLowerCase()
+    return lista.filter((p) => p.nombre.toLowerCase().includes(q))
+  }, [inventario, busquedaProducto])
 
-    const subtotalBaseServicio = Number(selectedCita.precio || 0)
-    const sumExtras = extrasSeleccionados.reduce((s, x) => s + Number(x.precio || 0), 0)
-    const extraManualNum = Math.max(0, Number(adicionalManual) || 0)
-    const subtotalExtras = sumExtras + extraManualNum
-    const subtotalServicio = subtotalBaseServicio + subtotalExtras
-
-    let subtotalProductos = 0
-    Object.entries(productosVenta).forEach(([prodId, cant]) => {
-      const item = inventario.find((p) => p.id === prodId)
-      if (item) {
-        subtotalProductos += Number(item.precio_venta || 0) * cant
-      }
+  const totalVentaProductos = useMemo(() => {
+    let tot = 0
+    Object.entries(productosVentaTienda).forEach(([id, cant]) => {
+      const p = inventario.find((x) => x.id === id)
+      if (p) tot += Number(p.precio_venta || 0) * cant
     })
+    return tot
+  }, [productosVentaTienda, inventario])
 
-    const porcentaje = Number(selectedCita.empleado?.porcentaje_comision ?? 45)
-    // REGLA CRÍTICA: Comisión del barbero = ÚNICAMENTE sobre servicios y sus extras (0% productos)
-    const comision = Math.round((subtotalServicio * porcentaje) / 100)
-    const gananciaLocalServicios = subtotalServicio - comision
-    const gananciaLocalProductos = subtotalProductos // 100% ganancia del negocio
-    const gananciaLocalTotal = gananciaLocalServicios + gananciaLocalProductos
-    const total = subtotalServicio + subtotalProductos
-
-    return {
-      subtotalBaseServicio,
-      subtotalExtras,
-      subtotalServicio,
-      subtotalProductos,
-      total,
-      comision,
-      gananciaLocalServicios,
-      gananciaLocalProductos,
-      gananciaLocalTotal,
-      porcentaje,
-    }
-  }, [selectedCita, extrasSeleccionados, adicionalManual, productosVenta, inventario])
-
-  const handleProcesarPago = async () => {
-    if (!selectedCita) {
-      toast.error('Selecciona una cita completada para liquidar.')
-      return
-    }
-
-    setProcessing(true)
-    try {
-      // 1. Si se agregaron extras al servicio agendado, sincronizar el precio de la cita
-      //    para que la RPC procesar_pago calcule la comisión exacta en la BD.
-      if (calculos.subtotalServicio !== Number(selectedCita.precio)) {
-        const extraManualNum = Math.max(0, Number(adicionalManual) || 0)
-        const notasExtras = [
-          ...extrasSeleccionados.map((x) => x.nombre),
-          extraManualNum > 0 ? (conceptoAdicional ? `${conceptoAdicional} ($${extraManualNum})` : `Adicional ($${extraManualNum})`) : null,
-        ].filter(Boolean).join(', ')
-
-        const nuevaNota = selectedCita.notas
-          ? `${selectedCita.notas} · Extras: ${notasExtras}`
-          : (notasExtras ? `Extras: ${notasExtras}` : '')
-
-        await api.updateCita(selectedCita.id, {
-          precio: calculos.subtotalServicio,
-          notas: nuevaNota,
-        })
-      }
-
-      // 2. Procesar pago en caja y descontar productos de inventario
-      const productosPayload = Object.entries(productosVenta).map(([producto_id, cantidad]) => ({
-        producto_id,
-        cantidad,
-      }))
-
-      const resultado = await api.procesarPago({
-        citaId: selectedCita.id,
-        metodo: metodoPago,
-        productos: productosPayload,
-      })
-
-      toast.success('¡Pago registrado con éxito en Caja!')
-      setTicketExitoso({
-        cita: {
-          ...selectedCita,
-          precio: calculos.subtotalServicio,
-        },
-        extras: extrasSeleccionados,
-        adicionalManual: Math.max(0, Number(adicionalManual) || 0),
-        conceptoAdicional,
-        subtotalServicio: calculos.subtotalServicio,
-        subtotalProductos: calculos.subtotalProductos,
-        total: calculos.total,
-        comision: calculos.comision,
-        gananciaLocalTotal: calculos.gananciaLocalTotal,
-        metodo: metodoPago,
-        resultado,
-        productosComprados: Object.entries(productosVenta).map(([id, cant]) => ({
-          producto: inventario.find((p) => p.id === id),
-          cantidad: cant,
-        })),
-        fecha: new Date(),
-      })
-
-      // Actualizar listado local e inventario
-      setCitasCompletadas((prev) => prev.filter((c) => c.id !== selectedCita.id))
-      setSelectedCita(null)
-      setProductosVenta({})
-      setExtrasSeleccionados([])
-      setAdicionalManual(0)
-      setConceptoAdicional('')
-
-      await cargarDatos()
-    } catch (err) {
-      toast.error(err)
-    } finally {
-      setProcessing(false)
-    }
-  }
-
-  // --- Handlers de Cobro Directo en Mostrador ---
-  const abrirModalCobroDirecto = (area = 'barberia') => {
-    setAreaDirecto(area)
-    const empsArea = empleados.filter((e) => e.area === area)
-    const servsArea = servicios.filter((s) => !s.area || s.area === area)
-    setCobroDirectoForm({
-      cliente: 'Cliente Mostrador',
-      empleado_id: empsArea[0]?.id || empleados[0]?.id || '',
-      servicio_id: servsArea[0]?.id || servicios[0]?.id || '',
-      servicios_extras: [],
-      metodo: 'efectivo',
-      productosVenta: {},
-      notas: '',
-    })
-    setModalCobroDirecto(true)
-  }
-
-  const toggleServicioExtra = (id) => {
-    setCobroDirectoForm((prev) => {
-      const yaEsta = prev.servicios_extras.includes(id)
-      return {
-        ...prev,
-        servicios_extras: yaEsta
-          ? prev.servicios_extras.filter((x) => x !== id)
-          : [...prev.servicios_extras, id],
-      }
-    })
-  }
-
-  const modificarCantidadDirecto = (producto, delta) => {
-    const actual = cobroDirectoForm.productosVenta[producto.id] || 0
-    const nuevo = actual + delta
-    if (nuevo < 0) return
-    if (nuevo > producto.stock_actual) {
-      toast.error(`Solo hay ${producto.stock_actual} unidades disponibles de "${producto.nombre}".`)
-      return
-    }
-    setCobroDirectoForm((prev) => {
-      const copia = { ...prev.productosVenta }
-      if (nuevo === 0) delete copia[producto.id]
-      else copia[producto.id] = nuevo
-      return { ...prev, productosVenta: copia }
-    })
-  }
-
-  const calculosDirecto = useMemo(() => {
-    const emp = empleados.find((x) => x.id === cobroDirectoForm.empleado_id)
-    const serv = servicios.find((x) => x.id === cobroDirectoForm.servicio_id)
-    const extras = servicios.filter((s) => cobroDirectoForm.servicios_extras.includes(s.id))
-
-    const subtotalServicio = Number(serv?.precio || 0) + extras.reduce((sum, x) => sum + Number(x.precio || 0), 0)
-
-    let subtotalProductos = 0
-    Object.entries(cobroDirectoForm.productosVenta).forEach(([prodId, cant]) => {
-      const item = inventario.find((p) => p.id === prodId)
-      if (item) subtotalProductos += Number(item.precio_venta) * cant
-    })
-
-    const total = subtotalServicio + subtotalProductos
-    const porcentaje = Number(emp?.porcentaje_comision ?? 45)
-    // Comisión de empleado: estrictamente calculada sobre servicios
-    const comision = Math.round((subtotalServicio * porcentaje) / 100)
-    const gananciaLocal = (subtotalServicio - comision) + subtotalProductos
-
-    return {
-      emp,
-      serv,
-      extras,
-      subtotalServicio,
-      subtotalProductos,
-      total,
-      porcentaje,
-      comision,
-      gananciaLocal,
-    }
-  }, [cobroDirectoForm, empleados, servicios, inventario])
-
-  const handleGuardarCobroDirecto = async (e) => {
+  const handleCobrarProductos = async (e) => {
     e.preventDefault()
-    if (!cobroDirectoForm.empleado_id || !cobroDirectoForm.servicio_id) {
-      toast.error('Por favor selecciona el profesional y el servicio.')
+    if (totalVentaProductos <= 0) {
+      toast.error('Agrega al menos un producto para cobrar.')
       return
     }
+
     setProcessing(true)
     try {
-      const emp = empleados.find((x) => x.id === cobroDirectoForm.empleado_id)
-      const serv = servicios.find((x) => x.id === cobroDirectoForm.servicio_id)
-      const extras = servicios.filter((s) => cobroDirectoForm.servicios_extras.includes(s.id))
-      const nombresServicios = [serv?.nombre, ...extras.map((x) => x.nombre)].filter(Boolean).join(' + ')
+      const now = new Date()
+      const servVenta = servicios[0]
+      const empVenta = empleados[0]
 
-      // 1. Crear la cita ya completada. Se ubica en el tiempo en que se realizó el servicio
-      //    (termina ahora) para no chocar con la próxima cita agendada del profesional.
-      const inicio = new Date(Date.now() - Number(serv?.duracion_minutos || 30) * 60000)
-      inicio.setSeconds(0, 0)
-      const cita = await api.createCita({
-        barberia_id: serv?.barberia_id,
-        cliente: cobroDirectoForm.cliente.trim() || 'Cliente Mostrador',
-        empleado_id: cobroDirectoForm.empleado_id,
-        servicio_id: cobroDirectoForm.servicio_id,
-        fecha_hora: inicio,
-        estado: 'completada',
-        notas: (cobroDirectoForm.notas ? `${cobroDirectoForm.notas} · ` : '') + (extras.length ? `Extras: ${extras.map(e => e.nombre).join(', ')}` : 'Cobro directo en mostrador'),
-      })
-
-      // Si hay servicios adicionales, el precio de la cita debe incluirlos para que
-      // procesar_pago registre el total correcto y la comisión sobre todos los servicios.
-      const precioServicios = calculosDirecto.subtotalServicio
-      if (cita.estado !== 'completada' || Number(cita.precio) !== precioServicios) {
-        await api.updateCita(cita.id, { estado: 'completada', precio: precioServicios })
-      }
-
-      // 2. Procesar el pago con el método elegido
-      const productosPayload = Object.entries(cobroDirectoForm.productosVenta).map(([producto_id, cantidad]) => ({
+      const payloadProductos = Object.entries(productosVentaTienda).map(([producto_id, cantidad]) => ({
         producto_id,
         cantidad,
       }))
 
-      const resultado = await api.procesarPago({
-        citaId: cita.id,
-        metodo: cobroDirectoForm.metodo,
-        productos: productosPayload,
+      // Crear cita técnica de venta
+      const cita = await api.createCita({
+        barberia_id: servVenta?.barberia_id,
+        cliente: formProducto.cliente.trim() || 'Cliente Mostrador',
+        cliente_telefono: formProducto.cliente_telefono.trim() || null,
+        empleado_id: empVenta?.id,
+        servicio_id: servVenta?.id,
+        fecha_hora: now,
+        estado: 'completada',
+        precio: 0,
+        notas: `Venta de mostrador (Productos de Tienda)${formProducto.referenciaComprobante ? ` · [${formProducto.banco} Ref: ${formProducto.referenciaComprobante}]` : ''}`,
       })
 
-      toast.success('¡Cobro registrado y liquidado con éxito!')
-      setModalCobroDirecto(false)
+      // Procesar pago con los productos
+      await api.procesarPago({
+        citaId: cita.id,
+        metodo: formProducto.metodo,
+        productos: payloadProductos,
+      })
+
+      toast.success(`¡Venta de productos por ${money(totalVentaProductos)} cobrada!`)
 
       setTicketExitoso({
-        cita: {
-          ...cita,
-          cliente: cobroDirectoForm.cliente || 'Cliente Mostrador',
-          empleado: emp,
-          servicio: { nombre: nombresServicios },
-          precio: calculosDirecto.subtotalServicio,
-        },
-        metodo: cobroDirectoForm.metodo,
-        resultado,
-        productosComprados: Object.entries(cobroDirectoForm.productosVenta).map(([id, cant]) => ({
-          producto: inventario.find((p) => p.id === id),
-          cantidad: cant,
-        })),
+        cliente: formProducto.cliente || 'Cliente Mostrador',
+        telefono: formProducto.cliente_telefono,
+        profesional: 'Barbería (Venta Directa)',
+        servicio: 'Productos de Tienda',
+        precio: totalVentaProductos,
+        metodo: formProducto.metodo,
+        banco: formProducto.banco,
+        referencia: formProducto.referenciaComprobante,
+        esNuevo: false,
+        comision: 0, // 0% al barbero, 100% negocio
+        gananciaLocal: totalVentaProductos,
+        itemsComprados: Object.entries(productosVentaTienda).map(([id, cant]) => {
+          const item = inventario.find((x) => x.id === id)
+          return { nombre: item?.nombre, cantidad: cant, precio: item?.precio_venta }
+        }),
         fecha: new Date(),
       })
 
+      setProductosVentaTienda({})
+      setFormProducto({
+        cliente: 'Cliente Mostrador',
+        cliente_telefono: '',
+        metodo: 'efectivo',
+        banco: 'Nequi',
+        referenciaComprobante: '',
+      })
       await cargarDatos()
     } catch (err) {
       toast.error(err)
@@ -430,187 +440,135 @@ export default function Caja() {
     }
   }
 
-  // --- Handlers de Cobro Familiar / Grupo (2 o más personas en 1 cuenta) ---
-  const abrirModalCobroGrupo = () => {
-    const emps = empleados.filter((e) => e.activo !== false)
-    const servs = servicios.filter((s) => s.activo !== false)
-    setCobroGrupoForm({
-      responsable: 'Familia Gómez',
-      metodo: 'efectivo',
-      productosVenta: {},
-      notas: '',
-      miembros: [
-        {
-          id: 'm1',
-          nombre: 'Papá (Titular)',
-          empleado_id: emps[0]?.id || '',
-          servicio_id: servs[0]?.id || '',
-          servicios_extras: [],
-        },
-        {
-          id: 'm2',
-          nombre: 'Hijo',
-          empleado_id: emps[1]?.id || emps[0]?.id || '',
-          servicio_id: servs[0]?.id || '',
-          servicios_extras: [],
-        },
-      ],
-    })
-    setModalCobroGrupo(true)
-  }
-
+  // --- 3. COBRO FAMILIAR / GRUPO ---
   const agregarMiembroGrupo = () => {
-    const emps = empleados.filter((e) => e.activo !== false)
-    const servs = servicios.filter((s) => s.activo !== false)
-    setCobroGrupoForm((prev) => ({
+    setFormGrupo((prev) => ({
       ...prev,
       miembros: [
         ...prev.miembros,
         {
           id: 'm_' + Date.now(),
           nombre: `Integrante ${prev.miembros.length + 1}`,
-          empleado_id: emps[0]?.id || '',
-          servicio_id: servs[0]?.id || '',
-          servicios_extras: [],
+          empleado_id: empleados[0]?.id || '',
+          servicio_id: servicios[0]?.id || '',
+          precio: Number(servicios[0]?.precio || 25000),
         },
       ],
     }))
   }
 
   const quitarMiembroGrupo = (id) => {
-    setCobroGrupoForm((prev) => {
-      if (prev.miembros.length <= 1) {
-        toast.error('Debe haber al menos un integrante en la cuenta.')
-        return prev
-      }
-      return {
-        ...prev,
-        miembros: prev.miembros.filter((m) => m.id !== id),
-      }
-    })
-  }
-
-  const actualizarMiembroGrupo = (id, campo, valor) => {
-    setCobroGrupoForm((prev) => ({
+    if (formGrupo.miembros.length <= 1) {
+      toast.error('Debe haber al menos un integrante en la cuenta.')
+      return
+    }
+    setFormGrupo((prev) => ({
       ...prev,
-      miembros: prev.miembros.map((m) => (m.id === id ? { ...m, [campo]: valor } : m)),
+      miembros: prev.miembros.filter((m) => m.id !== id),
     }))
   }
 
-  const toggleExtraMiembro = (miembroId, extraId) => {
-    setCobroGrupoForm((prev) => ({
+  const actualizarMiembroGrupo = (id, campo, valor) => {
+    setFormGrupo((prev) => ({
       ...prev,
       miembros: prev.miembros.map((m) => {
-        if (m.id !== miembroId) return m
-        const extras = m.servicios_extras || []
-        const yaEsta = extras.includes(extraId)
-        return {
-          ...m,
-          servicios_extras: yaEsta ? extras.filter((x) => x !== extraId) : [...extras, extraId],
+        if (m.id !== id) return m
+        if (campo === 'servicio_id') {
+          const serv = servicios.find((s) => s.id === valor)
+          return { ...m, servicio_id: valor, precio: Number(serv?.precio || 25000) }
         }
+        return { ...m, [campo]: valor }
       }),
     }))
   }
 
   const calculosGrupo = useMemo(() => {
-    let subtotalServicios = 0
+    let total = 0
     const porBarbero = {}
 
-    cobroGrupoForm.miembros.forEach((m) => {
-      const serv = servicios.find((s) => s.id === m.servicio_id)
+    formGrupo.miembros.forEach((m) => {
+      const p = Number(m.precio) || 0
+      total += p
       const emp = empleados.find((e) => e.id === m.empleado_id)
-      const extras = servicios.filter((s) => m.servicios_extras?.includes(s.id))
-      const totalM = Number(serv?.precio || 0) + extras.reduce((sum, x) => sum + Number(x.precio || 0), 0)
-      subtotalServicios += totalM
-
       if (emp) {
-        const pct = Number(emp.porcentaje_comision ?? 45)
-        const com = Math.round((totalM * pct) / 100)
+        const pct = Number(emp.porcentaje_comision ?? 50)
+        const com = Math.round((p * pct) / 100)
         porBarbero[emp.id] ??= {
           nombre: emp.nombre,
-          area: emp.area,
           porcentaje: pct,
           totalServicios: 0,
           comision: 0,
-          clientes: [],
+          personas: 0,
         }
-        porBarbero[emp.id].totalServicios += totalM
+        porBarbero[emp.id].totalServicios += p
         porBarbero[emp.id].comision += com
-        porBarbero[emp.id].clientes.push(`${m.nombre}: ${serv?.nombre || 'Servicio'}`)
+        porBarbero[emp.id].personas += 1
       }
     })
 
-    let subtotalProductos = 0
-    Object.entries(cobroGrupoForm.productosVenta || {}).forEach(([prodId, cant]) => {
-      const item = inventario.find((p) => p.id === prodId)
-      if (item) subtotalProductos += Number(item.precio_venta || 0) * cant
-    })
-
     const totalComisiones = Object.values(porBarbero).reduce((s, b) => s + b.comision, 0)
-    const totalPagar = subtotalServicios + subtotalProductos
-    const gananciaLocal = totalPagar - totalComisiones
+    const gananciaLocal = total - totalComisiones
 
     return {
-      subtotalServicios,
-      subtotalProductos,
-      totalPagar,
+      total,
       totalComisiones,
       gananciaLocal,
-      porBarbero: Object.values(porBarbero),
+      desglose: Object.values(porBarbero),
     }
-  }, [cobroGrupoForm, empleados, servicios, inventario])
+  }, [formGrupo, empleados, servicios])
 
-  const handleGuardarCobroGrupo = async (e) => {
+  const handleCobrarGrupo = async (e) => {
     e.preventDefault()
+    if (!formGrupo.responsable.trim()) {
+      toast.error('Escribe el nombre de la familia o responsable.')
+      return
+    }
     setProcessing(true)
     try {
-      const responsable = cobroGrupoForm.responsable.trim() || 'Cuenta Familiar'
       const now = new Date()
+      const refText = formGrupo.referenciaComprobante
+        ? ` · [${formGrupo.banco} Ref: ${formGrupo.referenciaComprobante.trim()}]`
+        : ''
 
-      // Registrar una cita completada y su pago por cada miembro con su barbero correspondiente
-      for (const m of cobroGrupoForm.miembros) {
+      for (const m of formGrupo.miembros) {
         const serv = servicios.find((s) => s.id === m.servicio_id)
-        const extras = servicios.filter((s) => m.servicios_extras?.includes(s.id))
-        const totalServicioM = Number(serv?.precio || 0) + extras.reduce((sum, x) => sum + Number(x.precio || 0), 0)
+        const durMin = Number(serv?.duracion_minutos || 30)
+        const inicio = new Date(now.getTime() - durMin * 60000)
 
-        const inicio = new Date(now.getTime() - Number(serv?.duracion_minutos || 30) * 60000)
         const cita = await api.createCita({
           barberia_id: serv?.barberia_id,
-          cliente: `${responsable} · ${m.nombre}`,
+          cliente: `${formGrupo.responsable.trim()} · ${m.nombre}`,
+          cliente_telefono: formGrupo.cliente_telefono.trim() || null,
           empleado_id: m.empleado_id,
           servicio_id: m.servicio_id,
           fecha_hora: inicio,
           estado: 'completada',
-          notas: `Cuenta Familiar (${responsable}) · Integrante: ${m.nombre}${extras.length ? ` · Extras: ${extras.map((x) => x.nombre).join(', ')}` : ''}`,
+          precio: Number(m.precio) || 25000,
+          notas: `Cuenta Familiar (${formGrupo.responsable}) · Integrante: ${m.nombre}${refText}`,
         })
-
-        if (cita.estado !== 'completada' || Number(cita.precio) !== totalServicioM) {
-          await api.updateCita(cita.id, { estado: 'completada', precio: totalServicioM })
-        }
 
         await api.procesarPago({
           citaId: cita.id,
-          metodo: cobroGrupoForm.metodo,
+          metodo: formGrupo.metodo,
           productos: [],
         })
       }
 
-      toast.success(`¡Cuenta familiar de ${responsable} cobrada con éxito!`)
-      setModalCobroGrupo(false)
+      toast.success(`¡Cuenta familiar cobrada con éxito por ${money(calculosGrupo.total)}!`)
 
       setTicketExitoso({
-        cita: {
-          cliente: `${responsable} (${cobroGrupoForm.miembros.length} personas)`,
-          servicio: { nombre: cobroGrupoForm.miembros.map((m) => m.nombre).join(' + ') },
-          precio: calculosGrupo.subtotalServicios,
-        },
-        metodo: cobroGrupoForm.metodo,
-        subtotalServicio: calculosGrupo.subtotalServicios,
-        subtotalProductos: calculosGrupo.subtotalProductos,
-        total: calculosGrupo.totalPagar,
+        cliente: `${formGrupo.responsable} (${formGrupo.miembros.length} personas)`,
+        telefono: formGrupo.cliente_telefono,
+        profesional: 'Varios Profesionales',
+        servicio: formGrupo.miembros.map((m) => m.nombre).join(' + '),
+        precio: calculosGrupo.total,
+        metodo: formGrupo.metodo,
+        banco: formGrupo.banco,
+        referencia: formGrupo.referenciaComprobante,
+        esNuevo: false,
         comision: calculosGrupo.totalComisiones,
-        gananciaLocalTotal: calculosGrupo.gananciaLocal,
-        productosComprados: [],
+        gananciaLocal: calculosGrupo.gananciaLocal,
+        desgloseGrupo: calculosGrupo.desglose,
         fecha: new Date(),
       })
 
@@ -623,1314 +581,1087 @@ export default function Caja() {
   }
 
   return (
-    <div className="animate-in">
-      <header className="page-header">
+    <div className="animate-in caja-container">
+      {/* Header Principal */}
+      <header className="page-header" style={{ marginBottom: 16 }}>
         <div>
-          <h1 className="page-title">Punto de Pago (Caja)</h1>
-          <p className="page-sub">
-            Liquida citas individuales, cobros grupales o familiares y asocia productos con comisiones automáticas.
-          </p>
+          <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 28 }}>💈</span>
+            <div>
+              <h1 className="page-title" style={{ margin: 0 }}>Caja de Cobro</h1>
+              <p className="page-sub" style={{ margin: 0 }}>
+                Cobro rápido en mostrador · Comisión 50% automática · Cero enredos
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="row wrap" style={{ gap: 10 }}>
-          <button
-            className="btn btn-outline"
-            onClick={abrirModalCobroGrupo}
-            id="caja-btn-grupo"
-            style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
-          >
-            <Icon name="users" /> 👥 + Cobro Familiar / Grupo (2+ pers.)
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={() => abrirModalCobroDirecto('barberia')}
-            id="caja-btn-nuevo-cobro"
-          >
-            <Icon name="plus" /> + Cobro Rápido Individual
-          </button>
-          <button
-            className="btn btn-ghost"
-            onClick={cargarDatos}
-            disabled={loading || processing}
-            id="caja-btn-refrescar"
-          >
-            <Icon name="refresh" /> Refrescar
-          </button>
-        </div>
+
+        <button
+          className="btn btn-ghost"
+          onClick={cargarDatos}
+          disabled={loading || processing}
+          id="caja-btn-refrescar"
+        >
+          <Icon name="refresh" /> Refrescar
+        </button>
       </header>
 
-      {/* Tarjetas de Arqueo de Caja e Ingresos de Hoy */}
+      {/* Arqueo de Caja del Día en Tiempo Real */}
       <div className="grid grid-4 stagger mb-24">
         <StatCard
           icon="trending"
           accent="gold"
           label="Total Recaudado Hoy"
           value={money(metricasCaja.totalRecaudado)}
-          hint={`${metricasCaja.cantidad} pago${metricasCaja.cantidad === 1 ? '' : 's'} liquidado${metricasCaja.cantidad === 1 ? '' : 's'} hoy`}
+          hint={`${metricasCaja.cantidad} cobro${metricasCaja.cantidad === 1 ? '' : 's'} hoy`}
         />
         <StatCard
           icon="bill"
           accent="green"
-          label="Efectivo en Cajón"
+          label="💵 Efectivo en Cajón"
           value={money(metricasCaja.efectivo)}
           hint="Dinero físico en caja"
         />
         <StatCard
           icon="smartphone"
           accent="violet"
-          label="Transferencias / Nequi"
+          label="📲 Nequi / Transferencias"
           value={money(metricasCaja.transferencia)}
-          hint={`Tarjetas/Datáfono: ${money(metricasCaja.tarjeta)}`}
+          hint={`Tarjetas: ${money(metricasCaja.tarjeta)}`}
         />
         <StatCard
           icon="wallet"
           accent="blue"
-          label="Ganancia Neta del Local"
+          label="💈 Ganancia Neta Barbería"
           value={money(metricasCaja.gananciaLocal)}
           hint={`Comisiones personal: ${money(metricasCaja.totalComisiones)}`}
         />
       </div>
 
+      {/* Pestañas de Cobro Claras y Grandes */}
+      <div className="caja-tabs-nav mb-20">
+        <button
+          type="button"
+          className={`caja-tab-btn ${pestañaCaja === 'servicio' ? 'active' : ''}`}
+          onClick={() => setPestañaCaja('servicio')}
+        >
+          <span style={{ fontSize: 20 }}>💈</span>
+          <div>
+            <div className="tab-title">Cobro de Corte / Servicio</div>
+            <div className="tab-sub">Barbería o Peluquería (50% de comisión)</div>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className={`caja-tab-btn ${pestañaCaja === 'producto' ? 'active' : ''}`}
+          onClick={() => setPestañaCaja('producto')}
+        >
+          <span style={{ fontSize: 20 }}>🛍️</span>
+          <div>
+            <div className="tab-title">Venta de Productos (Tienda)</div>
+            <div className="tab-sub">Ceras, minoxidil, champú (100% Barbería)</div>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          className={`caja-tab-btn ${pestañaCaja === 'grupo' ? 'active' : ''}`}
+          onClick={() => setPestañaCaja('grupo')}
+        >
+          <span style={{ fontSize: 20 }}>👥</span>
+          <div>
+            <div className="tab-title">Cobro Familiar / Grupo</div>
+            <div className="tab-sub">2 o más personas en 1 sola factura</div>
+          </div>
+        </button>
+      </div>
+
       {loading ? (
-        <div className="loader-screen" style={{ minHeight: '40vh' }}>
+        <div className="loader-screen" style={{ minHeight: '30vh' }}>
           <Spinner />
         </div>
       ) : (
         <>
-          <div className="caja-grid">
-          {/* Columna Izquierda: Citas pendientes por cobrar */}
-          <section className="card caja-pending">
-            <div className="card-header">
-              <div>
-                <h2 className="card-title">Citas por Cobrar</h2>
-                <p className="faint small">
-                  {citasCompletadas.length} cita{citasCompletadas.length === 1 ? '' : 's'} en estado Completada
-                </p>
-              </div>
-              <span className="badge badge-completada">{citasCompletadas.length}</span>
-            </div>
-
-            {citasCompletadas.length === 0 ? (
-              <Empty
-                icon="cash"
-                title="No hay citas listas para cobro"
+          {/* ========================================================= */}
+          {/* PESTAÑA 1: COBRO DE CORTE / SERVICIO DIRECTO              */}
+          {/* ========================================================= */}
+          {pestañaCaja === 'servicio' && (
+            <div className="card caja-main-card mb-24">
+              {/* Buscador de citas agendadas de hoy para autocompletar */}
+              <div
+                style={{
+                  background: 'var(--surface-hover)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  padding: 16,
+                  marginBottom: 20,
+                }}
               >
-                <p className="faint small mb-12">Las citas marcadas como "Completada" en la agenda aparecerán aquí.</p>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={() => abrirModalCobroDirecto('barberia')}
-                >
-                  <Icon name="plus" /> Registrar Cobro Directo Ahora
-                </button>
-              </Empty>
-            ) : (
-              <div className="list">
-                {citasCompletadas.map((c) => {
-                  const activa = selectedCita?.id === c.id
-                  return (
+                <div className="row-between wrap" style={{ gap: 8, alignItems: 'center' }}>
+                  <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                    <Icon name="search" size={18} style={{ color: 'var(--gold)' }} />
+                    <strong style={{ fontSize: 14 }}>
+                      ¿El cliente tenía cita agendada? Búscalo por celular o nombre:
+                    </strong>
+                  </div>
+                  {citaSeleccionadaId && (
                     <button
                       type="button"
-                      key={c.id}
-                      className={`pending-item ${activa ? 'active' : ''}`}
-                      aria-pressed={activa}
-                      disabled={processing}
-                      onClick={() => setSelectedCita(c)}
-                      id={`caja-item-${c.id}`}
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: 'var(--red)', padding: '2px 8px' }}
+                      onClick={limpiarCitaSeleccionada}
                     >
-                      <Avatar nombre={c.empleado?.nombre} area={c.empleado?.area} />
-                      <div className="grow">
-                        <div style={{ fontWeight: 600 }}>{c.cliente}</div>
-                        <div className="faint small">
-                          {c.servicio?.nombre} · {c.empleado?.nombre}
-                        </div>
-                        <div className="small muted mono">{fechaHora(c.fecha_hora)}</div>
-                      </div>
-                      <div className="right">
-                        <div className="mono" style={{ fontWeight: 700, color: 'var(--gold)' }}>
-                          {money(c.precio)}
-                        </div>
-                        <div className="faint small">{duracion(c.duracion_minutos)}</div>
-                      </div>
+                      ✕ Quitar cita vinculada (Cobrar como cliente libre)
                     </button>
-                  )
-                })}
-              </div>
-            )}
-          </section>
-
-          {/* Columna Derecha: Detalle de cobro y liquidación */}
-          <section className="card">
-            {!selectedCita ? (
-              <Empty icon="receipt" title="Selecciona una cita">
-                Elige una de las citas de la lista para liquidar su valor y comisiones.
-              </Empty>
-            ) : (
-              <div className="col" style={{ gap: 20 }}>
-                {/* Cabecera del ticket actual */}
-                <div className="row-between wrap" style={{ borderBottom: '1px solid var(--border)', paddingBottom: 16 }}>
-                  <div className="row">
-                    <Avatar nombre={selectedCita.empleado?.nombre} area={selectedCita.empleado?.area} size="lg" />
-                    <div>
-                      <h2 style={{ fontSize: 18, fontWeight: 700 }}>{selectedCita.cliente}</h2>
-                      <p className="faint small">
-                        Atendido por <strong>{selectedCita.empleado?.nombre}</strong> ({selectedCita.empleado?.porcentaje_comision || 40}% comisión)
-                      </p>
-                    </div>
-                  </div>
-                  <span className="badge badge-completada no-dot">Completada</span>
+                  )}
                 </div>
 
-                {/* 1. Servicio Base Agendado y Extras en Silla */}
+                <div style={{ marginTop: 8, position: 'relative' }}>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Escribe el celular (ej. 312...) o el nombre del cliente..."
+                    value={busquedaCita}
+                    onChange={(e) => setBusquedaCita(e.target.value)}
+                  />
+
+                  {citasFiltradasBusqueda.length > 0 && (
+                    <div className="citas-search-dropdown">
+                      {citasFiltradasBusqueda.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className="citas-search-item"
+                          onClick={() => seleccionarCitaParaCobro(c)}
+                        >
+                          <Avatar nombre={c.empleado?.nombre} area={c.empleado?.area} />
+                          <div className="grow" style={{ textAlign: 'left' }}>
+                            <div style={{ fontWeight: 600 }}>{c.cliente}</div>
+                            <div className="faint small">
+                              {c.cliente_telefono ? `📱 ${c.cliente_telefono} · ` : ''}
+                              {c.servicio?.nombre} con {c.empleado?.nombre}
+                            </div>
+                          </div>
+                          <div className="gold-text mono font-bold">{money(c.precio)}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {citaSeleccionadaId && (
+                  <div
+                    className="row mt-8"
+                    style={{
+                      background: 'rgba(234, 179, 8, 0.1)',
+                      border: '1px solid var(--gold)',
+                      borderRadius: 6,
+                      padding: '8px 12px',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <Icon name="checkCircle" size={16} style={{ color: 'var(--gold)' }} />
+                    <span className="small gold-text font-bold">
+                      Cita agendada vinculada. Al cobrar, el sistema marcará su cita como pagada en la agenda.
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Formulario Principal de Cobro */}
+              <form onSubmit={handleCobrarServicio}>
+                {/* 1. Selector de Área: Barbería o Women */}
+                <div className="form-group mb-16">
+                  <label className="form-label" style={{ fontWeight: 600 }}>
+                    1. ¿Barbero o Estilista?
+                  </label>
+                  <div className="segmented" style={{ maxWidth: 360 }}>
+                    <button
+                      type="button"
+                      className={areaServicio === 'barberia' ? 'active' : ''}
+                      onClick={() => handleCambioArea('barberia')}
+                    >
+                      <Icon name="scissors" /> 💈 Barbería
+                    </button>
+                    <button
+                      type="button"
+                      className={areaServicio === 'women' ? 'active' : ''}
+                      onClick={() => handleCambioArea('women')}
+                    >
+                      <Icon name="sparkles" /> 💅 Zona Women
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Profesional y Servicio */}
+                <div className="grid grid-2 mb-16" style={{ gap: 16 }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label required" style={{ fontWeight: 600 }}>
+                      2. Profesional que atendió
+                    </label>
+                    <select
+                      className="form-control"
+                      value={formServicio.empleado_id}
+                      onChange={(e) => setFormServicio({ ...formServicio, empleado_id: e.target.value })}
+                      required
+                    >
+                      <option value="">-- Selecciona Barbero / Estilista --</option>
+                      {empleadosFiltrados.map((emp) => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.nombre} (Comisión {emp.porcentaje_comision}%)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label required" style={{ fontWeight: 600 }}>
+                      3. Servicio Realizado
+                    </label>
+                    <select
+                      className="form-control"
+                      value={formServicio.servicio_id}
+                      onChange={(e) => handleCambioServicio(e.target.value)}
+                      required
+                    >
+                      <option value="">-- Selecciona Servicio --</option>
+                      {serviciosFiltrados.map((serv) => (
+                        <option key={serv.id} value={serv.id}>
+                          {serv.nombre} — {money(serv.precio)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Valor a Cobrar (Directamente editable sin enredos de extras) */}
+                <div className="form-group mb-20">
+                  <label className="form-label required" style={{ fontWeight: 600 }}>
+                    Valor a Cobrar por este Servicio (COP)
+                  </label>
+                  <div className="row" style={{ gap: 12, alignItems: 'center' }}>
+                    <input
+                      type="number"
+                      className="form-control mono font-bold gold-text"
+                      style={{ fontSize: 20, maxWidth: 220 }}
+                      value={formServicio.precioEditable}
+                      onChange={(e) => setFormServicio({ ...formServicio, precioEditable: e.target.value })}
+                      step={1000}
+                      min={0}
+                      required
+                    />
+                    <span className="faint small">
+                      * El precio se carga automáticamente. Puedes cambiarlo directamente aquí si el cliente pagará un valor diferente.
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. Datos del Cliente (Base de datos propia) */}
                 <div
                   style={{
-                    padding: '14px',
-                    borderRadius: 'var(--radius)',
-                    background: 'rgba(255, 255, 255, 0.02)',
+                    background: 'var(--surface-hover)',
                     border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius)',
+                    padding: 16,
+                    marginBottom: 20,
                   }}
                 >
-                  <div className="row-between wrap mb-8">
-                    <div>
-                      <span className="badge badge-gold no-dot" style={{ fontSize: 11, marginBottom: 4 }}>
-                        Servicio Agendado
-                      </span>
-                      <div style={{ fontWeight: 700, fontSize: 16 }}>{selectedCita.servicio?.nombre}</div>
-                      <span className="faint small">Base acordada en la agenda</span>
-                    </div>
-                    <div className="mono gold-text" style={{ fontSize: 18, fontWeight: 700 }}>
-                      {money(calculos.subtotalBaseServicio)}
-                    </div>
+                  <div className="form-title small mb-12" style={{ fontWeight: 700, color: 'var(--gold)' }}>
+                    DATOS DEL CLIENTE (BASE DE DATOS DE LA DUEÑA)
                   </div>
-
-                  {/* Sección de Extras / Adicionales del Barbero */}
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border)' }}>
-                    <div className="row-between wrap mb-8">
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 13 }}>
-                          ➕ ¿El barbero realizó servicios adicionales en silla?
-                        </div>
-                        <span className="faint small">
-                          Suma al servicio y a la comisión de {selectedCita.empleado?.nombre} ({calculos.porcentaje}%).
-                        </span>
-                      </div>
-                      {calculos.subtotalExtras > 0 && (
-                        <span className="badge badge-green no-dot mono" style={{ fontSize: 12 }}>
-                          +{money(calculos.subtotalExtras)} en extras
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Botones de Extras Rápidos */}
-                    <div className="row wrap" style={{ gap: 8, marginBottom: 10 }}>
-                      {SERVICIOS_EXTRAS_COMUNES.map((ext) => {
-                        const activo = extrasSeleccionados.some((x) => x.id === ext.id)
-                        return (
-                          <button
-                            type="button"
-                            key={ext.id}
-                            className={`btn btn-sm ${activo ? 'btn-primary' : 'btn-outline'}`}
-                            onClick={() => toggleExtraCita(ext)}
-                            style={{ borderRadius: 20 }}
-                            id={`caja-extra-${ext.id}`}
-                          >
-                            {activo ? '✓ ' : '+ '} {ext.nombre} ({money(ext.precio)})
-                          </button>
-                        )
-                      })}
-                    </div>
-
-                    {/* Campo para valor adicional manual */}
-                    <div className="row wrap" style={{ gap: 8, alignItems: 'center' }}>
-                      <div style={{ flex: 1, minWidth: 140 }}>
-                        <input
-                          type="number"
-                          min="0"
-                          step="1000"
-                          className="input input-sm"
-                          placeholder="Otro adicional ($)"
-                          value={adicionalManual || ''}
-                          onChange={(e) => setAdicionalManual(Number(e.target.value))}
-                          id="caja-extra-manual-monto"
-                        />
-                      </div>
-                      <div style={{ flex: 2, minWidth: 160 }}>
-                        <input
-                          type="text"
-                          className="input input-sm"
-                          placeholder="Motivo (ej. Diseño freestyle, mascarilla)..."
-                          value={conceptoAdicional}
-                          onChange={(e) => setConceptoAdicional(e.target.value)}
-                          id="caja-extra-manual-motivo"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 2. Sección de agregar productos al cobro */}
-                <div>
-                  <div className="row-between wrap mb-8 product-search-header">
-                    <div>
-                      <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-                        <h3 style={{ fontSize: 14, fontWeight: 600 }}>🛍️ Productos de Venta (Vitrina)</h3>
-                        <span className="badge badge-nequi no-dot" style={{ fontSize: 11 }}>100% Barbería · 0% Barbero</span>
-                      </div>
-                      <p className="faint small">
-                        Los productos comprados se suman al cobro pero NO comisionan al barbero.
-                      </p>
-                    </div>
-                    <div className="input-icon" style={{ width: 200 }}>
-                      <Icon name="search" />
+                  <div className="grid grid-2 mb-12" style={{ gap: 14 }}>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label className="form-label required">Nombre del Cliente</label>
                       <input
                         type="text"
-                        className="input input-sm"
-                        placeholder="Buscar producto…"
-                        value={busquedaProducto}
-                        onChange={(e) => setBusquedaProducto(e.target.value)}
-                        id="caja-buscar-producto"
+                        className="form-control"
+                        placeholder="Ej: Juan David Pérez"
+                        value={formServicio.cliente}
+                        onChange={(e) => setFormServicio({ ...formServicio, cliente: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label className="form-label required">
+                        📱 Celular / WhatsApp (Importante para tu base de datos)
+                      </label>
+                      <input
+                        type="tel"
+                        className="form-control"
+                        placeholder="Ej: 312 456 7890"
+                        value={formServicio.cliente_telefono}
+                        onChange={(e) => setFormServicio({ ...formServicio, cliente_telefono: e.target.value })}
+                        required
                       />
                     </div>
                   </div>
 
-                  <div
-                    style={{
-                      maxHeight: '180px',
-                      overflowY: 'auto',
-                      border: '1px solid var(--border)',
-                      borderRadius: 'var(--radius)',
-                      padding: '8px 12px',
-                      background: 'rgba(0,0,0,0.2)',
-                    }}
-                  >
-                    {productosFiltrados.length === 0 ? (
-                      <div className="empty" style={{ padding: '16px 0' }}>
-                        <span className="faint small">No se encontraron productos disponibles para la venta.</span>
-                      </div>
-                    ) : (
-                      productosFiltrados.map((prod) => {
-                        const cant = productosVenta[prod.id] || 0
-                        const sinStock = prod.stock_actual <= 0
-                        return (
-                          <div
-                            key={prod.id}
-                            className="row-between"
-                            style={{
-                              padding: '8px 0',
-                              borderBottom: '1px solid var(--border)',
-                              opacity: sinStock ? 0.5 : 1,
-                            }}
-                          >
-                            <div>
-                              <div style={{ fontWeight: 500, fontSize: 13 }}>{prod.nombre}</div>
-                              <div className="faint small mono">
-                                {money(prod.precio_venta)} · Stock: {prod.stock_actual}
-                              </div>
-                            </div>
-                            <div className="qty">
-                              <button
-                                type="button"
-                                onClick={() => modificarCantidad(prod, -1)}
-                                disabled={processing || cant <= 0}
-                                aria-label={`Quitar una unidad de ${prod.nombre}`}
-                                id={`caja-prod-minus-${prod.id}`}
-                              >
-                                -
-                              </button>
-                              <span>{cant}</span>
-                              <button
-                                type="button"
-                                onClick={() => modificarCantidad(prod, 1)}
-                                disabled={processing || sinStock || cant >= prod.stock_actual}
-                                aria-label={`Añadir una unidad de ${prod.nombre}`}
-                                id={`caja-prod-plus-${prod.id}`}
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })
-                    )}
+                  <div className="row-between wrap" style={{ gap: 12, alignItems: 'center' }}>
+                    <label className="row" style={{ gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={formServicio.esNuevo}
+                        onChange={(e) => setFormServicio({ ...formServicio, esNuevo: e.target.checked })}
+                        style={{ width: 18, height: 18, accentColor: 'var(--gold)' }}
+                      />
+                      <span style={{ fontWeight: 600 }}>⭐ ¿Es cliente nuevo en la barbería?</span>
+                    </label>
+
+                    <input
+                      type="text"
+                      className="form-control input-sm"
+                      style={{ maxWidth: 300 }}
+                      placeholder="Nota rápida opcional (ej: corte con línea)"
+                      value={formServicio.notas}
+                      onChange={(e) => setFormServicio({ ...formServicio, notas: e.target.value })}
+                    />
                   </div>
                 </div>
 
-                {/* Método de Pago */}
-                <div>
-                  <label className="label" style={{ marginBottom: 8, display: 'block' }}>
-                    Método de Pago
+                {/* 4. Método de Pago */}
+                <div className="form-group mb-20">
+                  <label className="form-label required" style={{ fontWeight: 600 }}>
+                    4. ¿Cómo pagó el cliente?
                   </label>
-                  <div className="row payment-methods" style={{ gap: 12 }}>
+                  <div className="pay-methods-grid">
                     <button
                       type="button"
-                      className={`pay-method ${metodoPago === 'efectivo' ? 'active' : ''}`}
-                      aria-pressed={metodoPago === 'efectivo'}
-                      disabled={processing}
-                      onClick={() => setMetodoPago('efectivo')}
-                      id="caja-metodo-efectivo"
+                      className={`pay-method ${formServicio.metodo === 'efectivo' ? 'active' : ''}`}
+                      onClick={() => setFormServicio({ ...formServicio, metodo: 'efectivo' })}
                     >
-                      <div className="pm-icon" style={{ color: 'var(--green)' }}>
-                        <Icon name="bill" />
+                      <div className="pm-icon" style={{ color: 'hsl(142, 70%, 55%)' }}>
+                        <Icon name="cash" />
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600 }}>Efectivo</div>
-                        <div className="faint small">Billetes y monedas</div>
+                        <div style={{ fontWeight: 600 }}>💵 Efectivo</div>
+                        <div className="faint small">Dinero en cajón físico</div>
                       </div>
                     </button>
 
                     <button
                       type="button"
-                      className={`pay-method ${metodoPago === 'transferencia' ? 'active' : ''}`}
-                      aria-pressed={metodoPago === 'transferencia'}
-                      disabled={processing}
-                      onClick={() => setMetodoPago('transferencia')}
-                      id="caja-metodo-transferencia"
+                      className={`pay-method ${formServicio.metodo === 'transferencia' ? 'active' : ''}`}
+                      onClick={() => setFormServicio({ ...formServicio, metodo: 'transferencia' })}
                     >
                       <div className="pm-icon" style={{ color: 'hsl(300, 75%, 75%)' }}>
                         <Icon name="smartphone" />
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600 }}>Transferencia</div>
-                        <div className="faint small">Nequi · Bre-B · Daviplata</div>
+                        <div style={{ fontWeight: 600 }}>📲 Nequi / Transferencia</div>
+                        <div className="faint small">Daviplata / Bancolombia / Bre-B</div>
                       </div>
                     </button>
 
                     <button
                       type="button"
-                      className={`pay-method ${metodoPago === 'tarjeta' ? 'active' : ''}`}
-                      aria-pressed={metodoPago === 'tarjeta'}
-                      disabled={processing}
-                      onClick={() => setMetodoPago('tarjeta')}
-                      id="caja-metodo-tarjeta"
+                      className={`pay-method ${formServicio.metodo === 'tarjeta' ? 'active' : ''}`}
+                      onClick={() => setFormServicio({ ...formServicio, metodo: 'tarjeta' })}
                     >
-                      <div className="pm-icon" style={{ color: 'hsl(210, 100%, 72%)' }}>
+                      <div className="pm-icon" style={{ color: 'hsl(190, 85%, 65%)' }}>
                         <Icon name="creditCard" />
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600 }}>Tarjeta / Datáfono</div>
-                        <div className="faint small">Débito y Crédito</div>
+                        <div style={{ fontWeight: 600 }}>💳 Tarjeta</div>
+                        <div className="faint small">Datáfono / Débito / Crédito</div>
                       </div>
                     </button>
                   </div>
+
+                  {/* Validación de Transferencia sin necesidad de tomar fotos */}
+                  {formServicio.metodo === 'transferencia' && (
+                    <div
+                      className="mt-12"
+                      style={{
+                        background: 'rgba(168, 85, 247, 0.1)',
+                        border: '1px solid hsl(300, 70%, 55%)',
+                        borderRadius: 'var(--radius)',
+                        padding: 14,
+                      }}
+                    >
+                      <div className="row wrap" style={{ gap: 12, alignItems: 'center' }}>
+                        <div style={{ minWidth: 150 }}>
+                          <label className="form-label small" style={{ marginBottom: 4 }}>
+                            Banco / App de Origen:
+                          </label>
+                          <select
+                            className="form-control input-sm"
+                            value={formServicio.banco}
+                            onChange={(e) => setFormServicio({ ...formServicio, banco: e.target.value })}
+                          >
+                            <option value="Nequi">Nequi</option>
+                            <option value="Daviplata">Daviplata</option>
+                            <option value="Bancolombia">Bancolombia</option>
+                            <option value="Bre-B">Bre-B</option>
+                            <option value="Otro">Otro Banco</option>
+                          </select>
+                        </div>
+
+                        <div className="grow">
+                          <label className="form-label small" style={{ marginBottom: 4 }}>
+                            Nro. de Aprobación o Comprobante (Últimos dígitos):
+                          </label>
+                          <input
+                            type="text"
+                            className="form-control input-sm mono"
+                            placeholder="Ej: M849201 o 8492 (Para cotejar sin tomar fotos al celular)"
+                            value={formServicio.referenciaComprobante}
+                            onChange={(e) => setFormServicio({ ...formServicio, referenciaComprobante: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* Resumen del Ticket y Reparto Exacto de Caja */}
-                <div className="receipt">
-                  {/* Bloque 1: Servicios del Barbero */}
-                  <div style={{ paddingBottom: 10, borderBottom: '1px solid var(--border)', marginBottom: 8 }}>
-                    <div className="row-between">
-                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>💇‍♂️ Servicios Realizados</span>
-                      <strong className="mono">{money(calculos.subtotalServicio)}</strong>
-                    </div>
-                    <div className="row-between faint small" style={{ marginTop: 2 }}>
-                      <span>· Base: {selectedCita.servicio?.nombre}</span>
-                      <span className="mono">{money(calculos.subtotalBaseServicio)}</span>
-                    </div>
-                    {extrasSeleccionados.map((ext) => (
-                      <div className="row-between faint small" key={ext.id}>
-                        <span>· {ext.nombre}</span>
-                        <span className="mono">+{money(ext.precio)}</span>
-                      </div>
-                    ))}
-                    {Number(adicionalManual) > 0 && (
-                      <div className="row-between faint small">
-                        <span>· {conceptoAdicional || 'Valor adicional'}</span>
-                        <span className="mono">+{money(adicionalManual)}</span>
-                      </div>
-                    )}
-                    <div className="row-between small" style={{ marginTop: 6, color: 'var(--green)' }}>
-                      <span>✓ Comisión para {selectedCita.empleado?.nombre} ({calculos.porcentaje}%):</span>
-                      <strong className="mono">{money(calculos.comision)}</strong>
-                    </div>
-                    <div className="row-between faint small">
-                      <span>✓ Ganancia Barbería por Servicios:</span>
-                      <span className="mono">{money(calculos.gananciaLocalServicios)}</span>
-                    </div>
+                {/* 5. Tarjeta de Liquidación Clara al 50% */}
+                <div
+                  className="receipt mb-20"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(202, 138, 4, 0.08), rgba(234, 179, 8, 0.03))',
+                    border: '1px solid var(--gold)',
+                    borderRadius: 'var(--radius)',
+                    padding: 16,
+                  }}
+                >
+                  <div className="receipt-row" style={{ fontSize: 16 }}>
+                    <span className="muted">Total a Cobrar al Cliente:</span>
+                    <strong className="mono gold-text font-bold" style={{ fontSize: 22 }}>
+                      {money(calculosServicio.total)}
+                    </strong>
                   </div>
 
-                  {/* Bloque 2: Productos de Tienda */}
-                  <div style={{ paddingBottom: 10, borderBottom: '1px solid var(--border)', marginBottom: 8 }}>
-                    <div className="row-between">
-                      <span style={{ fontWeight: 600, color: 'var(--text)' }}>🛍️ Productos de Tienda</span>
-                      <strong className="mono">{money(calculos.subtotalProductos)}</strong>
-                    </div>
-                    {Object.entries(productosVenta).length === 0 ? (
-                      <div className="faint small" style={{ fontStyle: 'italic', marginTop: 2 }}>Sin productos agregados</div>
-                    ) : (
-                      Object.entries(productosVenta).map(([id, cant]) => {
-                        const prod = inventario.find((p) => p.id === id)
-                        if (!prod) return null
-                        return (
-                          <div className="row-between faint small" key={id}>
-                            <span>· {prod.nombre} (x{cant})</span>
-                            <span className="mono">{money(prod.precio_venta * cant)}</span>
-                          </div>
-                        )
-                      })
-                    )}
-                    <div className="row-between small" style={{ marginTop: 6, color: 'var(--gold)' }}>
-                      <span>✓ Ganancia Barbería por Productos (100%):</span>
-                      <strong className="mono">{money(calculos.gananciaLocalProductos)}</strong>
-                    </div>
-                    <div className="row-between faint small">
-                      <span>✓ Comisión barbero por productos:</span>
-                      <span className="mono">$0</span>
-                    </div>
-                  </div>
+                  <div className="receipt-divider" style={{ margin: '10px 0' }} />
 
-                  {/* Total a Cobrar al Cliente */}
-                  <div className="receipt-row total">
-                    <span>Total a Cobrar al Cliente</span>
-                    <span className="gold-text mono" style={{ fontSize: 20 }}>{money(calculos.total)}</span>
-                  </div>
-
-                  {/* Arqueo / Cierre de la operación */}
-                  <div className="commission-box" style={{ marginTop: 12 }}>
-                    <div className="col" style={{ gap: 6 }}>
-                      <div className="row-between">
-                        <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-                          <Icon name="checkCircle" size={16} style={{ color: 'var(--green)' }} />
-                          <span style={{ fontWeight: 600 }}>A pagar a {selectedCita.empleado?.nombre}:</span>
-                        </div>
-                        <strong className="mono" style={{ color: 'var(--green)', fontSize: 15 }}>
-                          {money(calculos.comision)}
-                        </strong>
+                  <div className="grid grid-2" style={{ gap: 12 }}>
+                    <div
+                      style={{
+                        background: 'rgba(239, 68, 68, 0.08)',
+                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                        padding: 10,
+                        borderRadius: 8,
+                      }}
+                    >
+                      <div className="faint small">
+                        Comisión para {calculosServicio.emp?.nombre || 'el barbero'} ({calculosServicio.porcentaje}%):
                       </div>
-                      <div className="row-between">
-                        <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-                          <Icon name="wallet" size={16} style={{ color: 'var(--gold)' }} />
-                          <span style={{ fontWeight: 600 }}>Queda en Caja del Local:</span>
-                        </div>
-                        <strong className="mono gold-text" style={{ fontSize: 15 }}>
-                          {money(calculos.gananciaLocalTotal)}
-                        </strong>
+                      <div className="mono font-bold" style={{ color: 'hsl(0, 80%, 70%)', fontSize: 18 }}>
+                        {money(calculosServicio.comision)}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        background: 'rgba(34, 197, 94, 0.08)',
+                        border: '1px solid rgba(34, 197, 94, 0.2)',
+                        padding: 10,
+                        borderRadius: 8,
+                      }}
+                    >
+                      <div className="faint small">Queda libre para la Barbería (50%):</div>
+                      <div className="mono font-bold" style={{ color: 'var(--green)', fontSize: 18 }}>
+                        {money(calculosServicio.gananciaLocal)}
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Botón de Liquidación */}
+                {/* Botón de Cobro Gigante */}
                 <button
-                  type="button"
-                  className="btn btn-primary btn-lg btn-block checkout-submit"
-                  onClick={handleProcesarPago}
+                  type="submit"
+                  className="btn btn-primary btn-lg"
+                  style={{ width: '100%', fontSize: 18, height: 50, justifyContent: 'center' }}
                   disabled={processing}
-                  id="caja-btn-liquidar"
+                  id="caja-btn-cobrar-servicio"
                 >
                   {processing ? (
-                    <Spinner />
+                    <Spinner size="sm" />
                   ) : (
-                    <>
-                      <Icon name="checkCircle" /> Liquidar y Guardar Pago ({money(calculos.total)})
-                    </>
-                  )}
+                    <Icon name="check" size={20} />
+                  )}{' '}
+                  REGISTRAR Y COBRAR CORTE ({money(calculosServicio.total)})
                 </button>
+              </form>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* PESTAÑA 2: VENTA DE PRODUCTOS (TIENDA SEPARADA)           */}
+          {/* ========================================================= */}
+          {pestañaCaja === 'producto' && (
+            <div className="card caja-main-card mb-24">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">Venta de Productos de Mostrador</h2>
+                  <p className="faint small">
+                    El dinero de la venta de ceras, minoxidil y champú va 100% para la barbería (0% comisión a barberos).
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleCobrarProductos}>
+                <div className="grid grid-2 mb-20" style={{ gap: 20 }}>
+                  {/* Catálogo de productos para seleccionar */}
+                  <div>
+                    <label className="form-label" style={{ fontWeight: 600 }}>
+                      Selecciona los productos vendidos:
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control input-sm mb-12"
+                      placeholder="Buscar producto por nombre..."
+                      value={busquedaProducto}
+                      onChange={(e) => setBusquedaProducto(e.target.value)}
+                    />
+
+                    <div className="caja-prod-grid">
+                      {productosVentaFiltrados.map((p) => {
+                        const cant = productosVentaTienda[p.id] || 0
+                        return (
+                          <div
+                            key={p.id}
+                            className={`caja-prod-card ${cant > 0 ? 'selected' : ''}`}
+                            onClick={() => modificarCantidadTienda(p, cant > 0 ? -1 : 1)}
+                          >
+                            <div className="row-between">
+                              <span style={{ fontWeight: 600 }}>{p.nombre}</span>
+                              <span className="mono gold-text">{money(p.precio_venta)}</span>
+                            </div>
+                            <div className="row-between mt-8 faint small">
+                              <span>Stock: {p.stock_actual} uds</span>
+                              {cant > 0 && (
+                                <span className="badge badge-gold">{cant} en cuenta</span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Resumen de la Venta de Productos */}
+                  <div className="stack" style={{ gap: 14 }}>
+                    <div
+                      style={{
+                        background: 'var(--surface-hover)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius)',
+                        padding: 14,
+                      }}
+                    >
+                      <div className="form-title small mb-8" style={{ fontWeight: 600 }}>
+                        Cliente Comprador:
+                      </div>
+                      <div className="grid grid-2" style={{ gap: 10 }}>
+                        <input
+                          type="text"
+                          className="form-control input-sm"
+                          placeholder="Nombre del cliente"
+                          value={formProducto.cliente}
+                          onChange={(e) => setFormProducto({ ...formProducto, cliente: e.target.value })}
+                        />
+                        <input
+                          type="tel"
+                          className="form-control input-sm"
+                          placeholder="Celular (opcional)"
+                          value={formProducto.cliente_telefono}
+                          onChange={(e) => setFormProducto({ ...formProducto, cliente_telefono: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Método de pago de productos */}
+                    <div>
+                      <label className="form-label small" style={{ fontWeight: 600 }}>
+                        Método de pago de los productos:
+                      </label>
+                      <div className="row wrap" style={{ gap: 8 }}>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${formProducto.metodo === 'efectivo' ? 'btn-primary' : 'btn-outline'}`}
+                          onClick={() => setFormProducto({ ...formProducto, metodo: 'efectivo' })}
+                        >
+                          💵 Efectivo
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${formProducto.metodo === 'transferencia' ? 'btn-primary' : 'btn-outline'}`}
+                          onClick={() => setFormProducto({ ...formProducto, metodo: 'transferencia' })}
+                        >
+                          📲 Nequi / Transferencia
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${formProducto.metodo === 'tarjeta' ? 'btn-primary' : 'btn-outline'}`}
+                          onClick={() => setFormProducto({ ...formProducto, metodo: 'tarjeta' })}
+                        >
+                          💳 Tarjeta
+                        </button>
+                      </div>
+
+                      {formProducto.metodo === 'transferencia' && (
+                        <div className="row mt-8" style={{ gap: 8 }}>
+                          <select
+                            className="form-control input-sm"
+                            style={{ width: 130 }}
+                            value={formProducto.banco}
+                            onChange={(e) => setFormProducto({ ...formProducto, banco: e.target.value })}
+                          >
+                            <option value="Nequi">Nequi</option>
+                            <option value="Daviplata">Daviplata</option>
+                            <option value="Bancolombia">Bancolombia</option>
+                          </select>
+                          <input
+                            type="text"
+                            className="form-control input-sm grow mono"
+                            placeholder="Nro Comprobante / Aprobación (ej. 8492)"
+                            value={formProducto.referenciaComprobante}
+                            onChange={(e) => setFormProducto({ ...formProducto, referenciaComprobante: e.target.value })}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Total y botón */}
+                    <div className="receipt">
+                      <div className="receipt-row total">
+                        <span>Total Productos:</span>
+                        <span className="gold-text mono">{money(totalVentaProductos)}</span>
+                      </div>
+                      <div className="faint small mt-4" style={{ color: 'var(--green)' }}>
+                        ✓ 100% Ganancia neta para la barbería (Sin deducción de comisiones)
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="btn btn-primary btn-lg"
+                      style={{ width: '100%', justifyContent: 'center' }}
+                      disabled={processing || totalVentaProductos <= 0}
+                      id="caja-btn-cobrar-productos"
+                    >
+                      {processing ? <Spinner size="sm" /> : <Icon name="check" />}{' '}
+                      Cobrar Venta de Productos ({money(totalVentaProductos)})
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* PESTAÑA 3: COBRO FAMILIAR / GRUPO (2+ PERSONAS)           */}
+          {/* ========================================================= */}
+          {pestañaCaja === 'grupo' && (
+            <div className="card caja-main-card mb-24">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">👥 Cobro Familiar / Grupo (1 Sola Cuenta)</h2>
+                  <p className="faint small">
+                    Cobra a la familia completa en una sola factura. Cada miembro tiene su barbero y sus comisiones se separan solas.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={agregarMiembroGrupo}
+                  style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+                >
+                  <Icon name="plus" size={14} /> + Agregar Integrante
+                </button>
+              </div>
+
+              <form onSubmit={handleCobrarGrupo}>
+                <div className="grid grid-2 mb-16" style={{ gap: 14 }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label required">Nombre de la Familia o Responsable</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Ej: Familia Gómez / Papá Juan"
+                      value={formGrupo.responsable}
+                      onChange={(e) => setFormGrupo({ ...formGrupo, responsable: e.target.value })}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label className="form-label">📱 Celular del Responsable (WhatsApp)</label>
+                    <input
+                      type="tel"
+                      className="form-control"
+                      placeholder="Ej: 312 456 7890"
+                      value={formGrupo.cliente_telefono}
+                      onChange={(e) => setFormGrupo({ ...formGrupo, cliente_telefono: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                {/* Lista de Miembros */}
+                <div className="stack mb-20" style={{ gap: 10 }}>
+                  {formGrupo.miembros.map((m, idx) => (
+                    <div
+                      key={m.id}
+                      style={{
+                        background: 'var(--surface-hover)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius)',
+                        padding: 12,
+                      }}
+                      className="row wrap"
+                    >
+                      <div className="row" style={{ gap: 8, alignItems: 'center', minWidth: 200 }}>
+                        <span className="badge badge-gold" style={{ width: 24, height: 24, padding: 0, justifyContent: 'center' }}>
+                          {idx + 1}
+                        </span>
+                        <input
+                          type="text"
+                          className="form-control input-sm font-bold"
+                          placeholder="Nombre / Parentesco"
+                          value={m.nombre}
+                          onChange={(e) => actualizarMiembroGrupo(m.id, 'nombre', e.target.value)}
+                        />
+                      </div>
+
+                      <div className="grow row" style={{ gap: 8 }}>
+                        <select
+                          className="form-control input-sm"
+                          value={m.empleado_id}
+                          onChange={(e) => actualizarMiembroGrupo(m.id, 'empleado_id', e.target.value)}
+                          required
+                        >
+                          <option value="">-- Barbero --</option>
+                          {empleados.map((emp) => (
+                            <option key={emp.id} value={emp.id}>
+                              {emp.nombre} ({emp.area === 'barberia' ? 'Barbero' : 'Estilista'})
+                            </option>
+                          ))}
+                        </select>
+
+                        <select
+                          className="form-control input-sm"
+                          value={m.servicio_id}
+                          onChange={(e) => actualizarMiembroGrupo(m.id, 'servicio_id', e.target.value)}
+                          required
+                        >
+                          <option value="">-- Servicio --</option>
+                          {servicios.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.nombre} ({money(s.precio)})
+                            </option>
+                          ))}
+                        </select>
+
+                        <input
+                          type="number"
+                          className="form-control input-sm mono font-bold gold-text"
+                          style={{ width: 110 }}
+                          value={m.precio}
+                          onChange={(e) => actualizarMiembroGrupo(m.id, 'precio', e.target.value)}
+                          step={1000}
+                        />
+
+                        {formGrupo.miembros.length > 1 && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            style={{ color: 'var(--red)', padding: 4 }}
+                            onClick={() => quitarMiembroGrupo(m.id)}
+                          >
+                            <Icon name="trash" size={16} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Método de Pago y Resumen */}
+                <div className="grid grid-2 mb-20" style={{ gap: 16 }}>
+                  <div>
+                    <label className="form-label small" style={{ fontWeight: 600 }}>
+                      Método de Pago de la Cuenta Familiar:
+                    </label>
+                    <div className="row wrap" style={{ gap: 8 }}>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${formGrupo.metodo === 'efectivo' ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setFormGrupo({ ...formGrupo, metodo: 'efectivo' })}
+                      >
+                        💵 Efectivo
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${formGrupo.metodo === 'transferencia' ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setFormGrupo({ ...formGrupo, metodo: 'transferencia' })}
+                      >
+                        📲 Nequi / Transferencia
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${formGrupo.metodo === 'tarjeta' ? 'btn-primary' : 'btn-outline'}`}
+                        onClick={() => setFormGrupo({ ...formGrupo, metodo: 'tarjeta' })}
+                      >
+                        💳 Tarjeta
+                      </button>
+                    </div>
+
+                    {formGrupo.metodo === 'transferencia' && (
+                      <div className="row mt-8" style={{ gap: 8 }}>
+                        <select
+                          className="form-control input-sm"
+                          style={{ width: 130 }}
+                          value={formGrupo.banco}
+                          onChange={(e) => setFormGrupo({ ...formGrupo, banco: e.target.value })}
+                        >
+                          <option value="Nequi">Nequi</option>
+                          <option value="Daviplata">Daviplata</option>
+                          <option value="Bancolombia">Bancolombia</option>
+                        </select>
+                        <input
+                          type="text"
+                          className="form-control input-sm grow mono"
+                          placeholder="Nro Comprobante / Aprobación (ej. 8492)"
+                          value={formGrupo.referenciaComprobante}
+                          onChange={(e) => setFormGrupo({ ...formGrupo, referenciaComprobante: e.target.value })}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="receipt">
+                    <div className="receipt-row total">
+                      <span>Total Familia / Grupo:</span>
+                      <span className="gold-text mono">{money(calculosGrupo.total)}</span>
+                    </div>
+                    <div className="receipt-divider" style={{ margin: '8px 0' }} />
+                    <div className="faint small">
+                      {calculosGrupo.desglose.map((b) => (
+                        <div key={b.nombre} className="row-between">
+                          <span>{b.nombre} ({b.personas} pers.):</span>
+                          <strong className="mono" style={{ color: 'var(--green)' }}>
+                            Comisión: {money(b.comision)}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-lg"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  disabled={processing}
+                  id="caja-btn-cobrar-grupo"
+                >
+                  {processing ? <Spinner size="sm" /> : <Icon name="check" />}{' '}
+                  Cobrar Cuenta Familiar ({money(calculosGrupo.total)})
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* HISTORIAL DE COBROS DE HOY EN TIEMPO REAL                 */}
+          {/* ========================================================= */}
+          <section className="card">
+            <div className="card-header">
+              <div>
+                <h2 className="card-title">Cobros Realizados Hoy ({pagosHoy.length})</h2>
+                <p className="faint small">
+                  Registro contable en tiempo real con comprobantes de transferencia y comisiones al 50%.
+                </p>
+              </div>
+            </div>
+
+            {pagosHoy.length === 0 ? (
+              <Empty
+                icon="cash"
+                title="Aún no hay cobros registrados hoy"
+              >
+                <p className="faint small">Los cobros que realices en el formulario de arriba aparecerán aquí en vivo.</p>
+              </Empty>
+            ) : (
+              <div className="table-responsive">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Hora</th>
+                      <th>Cliente & Celular</th>
+                      <th>Servicio / Ítem</th>
+                      <th>Profesional</th>
+                      <th>Método de Pago</th>
+                      <th className="right">Cobrado</th>
+                      <th className="right">Comisión (50%)</th>
+                      <th className="right">Barbería</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagosHoy.map((p) => {
+                      const esNuevo = p.cita?.notas?.includes('[Cliente Nuevo]')
+                      const ganancia = Number(p.total_pago) - Number(p.comision_empleado)
+                      return (
+                        <tr key={p.id}>
+                          <td className="mono faint small">{hora(p.created_at)}</td>
+                          <td>
+                            <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                              <strong>{p.cita?.cliente || 'Cliente'}</strong>
+                              {esNuevo && (
+                                <span
+                                  className="badge badge-gold"
+                                  style={{ fontSize: 10, padding: '2px 6px' }}
+                                >
+                                  ⭐ NUEVO
+                                </span>
+                              )}
+                            </div>
+                            {p.cita?.cliente_telefono && (
+                              <div className="faint small mono">📱 {p.cita.cliente_telefono}</div>
+                            )}
+                          </td>
+                          <td>
+                            <div>{p.cita?.servicio?.nombre || 'Servicio'}</div>
+                            {p.cita?.notas && (
+                              <div className="faint small" style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {p.cita.notas}
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                              <Avatar nombre={p.empleado?.nombre} area={p.empleado?.area} size="sm" />
+                              <span>{p.empleado?.nombre || 'Profesional'}</span>
+                            </div>
+                          </td>
+                          <td>
+                            <span className="badge badge-outline">
+                              {p.metodo_pago === 'efectivo'
+                                ? '💵 Efectivo'
+                                : p.metodo_pago === 'tarjeta'
+                                ? '💳 Tarjeta'
+                                : '📲 Nequi / Transf.'}
+                            </span>
+                          </td>
+                          <td className="right mono font-bold gold-text">
+                            {money(p.total_pago)}
+                          </td>
+                          <td className="right mono" style={{ color: 'hsl(0, 80%, 70%)' }}>
+                            {money(p.comision_empleado)}
+                          </td>
+                          <td className="right mono" style={{ color: 'var(--green)' }}>
+                            {money(ganancia)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </section>
-        </div>
-
-        {/* Sección de Historial de Cobros Realizados Hoy */}
-        <section className="card mt-24">
-          <div className="card-header">
-            <div>
-              <h2 className="card-title">Cobros Realizados Hoy (Arqueo de Pagos)</h2>
-              <p className="faint small">
-                {pagosHoy.length} pago{pagosHoy.length === 1 ? '' : 's'} registrado{pagosHoy.length === 1 ? '' : 's'} hoy · Total: <strong style={{ color: 'var(--gold)' }}>{money(metricasCaja.totalRecaudado)}</strong>
-              </p>
-            </div>
-            <span className="badge badge-completada no-dot">{pagosHoy.length} tickets</span>
-          </div>
-
-          {pagosHoy.length === 0 ? (
-            <Empty icon="receipt" title="Aún no hay cobros registrados hoy">
-              A medida que liquides citas o registres cobros en mostrador, aparecerán aquí para el cuadre diario de caja.
-            </Empty>
-          ) : (
-            <div className="table-wrap">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Hora</th>
-                    <th>Cliente</th>
-                    <th>Atendido por</th>
-                    <th>Servicio / Productos</th>
-                    <th>Método de Pago</th>
-                    <th className="num">Total Cobrado</th>
-                    <th className="num" style={{ color: 'var(--green)' }}>Comisión</th>
-                    <th style={{ textAlign: 'right' }}>Recibo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pagosHoy.map((p) => {
-                    const totalProds = p.productos?.length || 0
-                    return (
-                      <tr key={p.id}>
-                        <td className="mono faint small">{hora(p.created_at)}</td>
-                        <td>
-                          <strong>{p.cita?.cliente || 'Cliente Mostrador'}</strong>
-                        </td>
-                        <td>
-                          <div className="row" style={{ gap: 6 }}>
-                            <Avatar nombre={p.empleado?.nombre} area={p.empleado?.area} size={24} />
-                            <span>{p.empleado?.nombre || 'Profesional'}</span>
-                          </div>
-                        </td>
-                        <td>
-                          <div>
-                            <span>{p.cita?.servicio?.nombre || 'Servicio'}</span>
-                            {totalProds > 0 && (
-                              <span className="faint small" style={{ display: 'block' }}>
-                                +{totalProds} producto{totalProds === 1 ? '' : 's'}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td>
-                          <span className={`badge badge-${p.metodo_pago}`}>
-                            {METODOS_PAGO[p.metodo_pago] || p.metodo_pago}
-                          </span>
-                        </td>
-                        <td className="num mono">
-                          <strong style={{ color: 'var(--gold)', fontSize: 15 }}>
-                            {money(p.total_pago)}
-                          </strong>
-                        </td>
-                        <td className="num mono" style={{ color: 'var(--green)' }}>
-                          {money(p.comision_empleado)}
-                        </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <button
-                            type="button"
-                            className="btn btn-ghost btn-xs"
-                            onClick={() =>
-                              setTicketExitoso({
-                                cita: p.cita,
-                                metodo: p.metodo_pago,
-                                resultado: p,
-                                productosComprados: (p.productos || []).map((x) => ({
-                                  producto: x.producto || { nombre: 'Producto' },
-                                  cantidad: x.cantidad,
-                                })),
-                                fecha: new Date(p.created_at),
-                              })
-                            }
-                            title="Ver recibo de pago"
-                          >
-                            <Icon name="receipt" size={14} /> Ver
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan="5">Total Acumulado Hoy</td>
-                    <td className="num mono" style={{ color: 'var(--gold)', fontSize: 16 }}>
-                      {money(metricasCaja.totalRecaudado)}
-                    </td>
-                    <td className="num mono" style={{ color: 'var(--green)', fontSize: 16 }}>
-                      {money(metricasCaja.totalComisiones)}
-                    </td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </section>
         </>
       )}
 
-      {/* Modal de Comprobante / Recibo Tras Pago Exitoso */}
+      {/* ========================================================= */}
+      {/* MODAL / TICKET DE COBRO EXITOSO                           */}
+      {/* ========================================================= */}
       <Modal
         open={Boolean(ticketExitoso)}
         onClose={() => setTicketExitoso(null)}
-        title="¡Pago Registrado en Caja!"
-        subtitle="La cita ha sido marcada como Pagada y se actualizó el stock."
+        title="✓ ¡Cobro Registrado con Éxito!"
+        subtitle="El pago quedó asentado en la caja y en las comisiones de hoy."
+        size="md"
         footer={
           <div className="row-between wrap" style={{ width: '100%', gap: 10 }}>
+            {ticketExitoso?.telefono ? (
+              <a
+                href={`https://wa.me/57${ticketExitoso.telefono.replace(/\D/g, '')}?text=${encodeURIComponent(
+                  `¡Hola ${ticketExitoso.cliente}! Muchas gracias por tu visita a Elite Barber Studio. Tu pago de ${money(ticketExitoso.precio)} por ${ticketExitoso.servicio} fue recibido con éxito. ¡Te esperamos pronto!`
+                )}`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn btn-outline"
+                style={{ borderColor: 'var(--green)', color: 'var(--green)' }}
+              >
+                <Icon name="smartphone" /> Enviar Comprobante WhatsApp
+              </a>
+            ) : <div />}
+
             <button
               type="button"
-              className="btn btn-outline"
-              onClick={() => window.print()}
-            >
-              <Icon name="bill" /> Imprimir Comprobante
-            </button>
-            <button
               className="btn btn-primary"
               onClick={() => setTicketExitoso(null)}
-              id="ticket-cerrar"
             >
-              Aceptar y Cerrar
+              Listo, Cerrar
             </button>
           </div>
         }
       >
         {ticketExitoso && (
-          <div className="col" style={{ gap: 14 }}>
-            <div
-              style={{
-                textAlign: 'center',
-                padding: '16px',
-                background: 'var(--green-soft)',
-                borderRadius: 'var(--radius)',
-                border: '1px solid hsla(152, 58%, 52%, 0.3)',
-              }}
-            >
-              <Icon name="checkCircle" size={32} style={{ color: 'var(--green)', margin: '0 auto 8px' }} />
-              <h3 style={{ fontSize: 24, fontWeight: 700 }} className="mono">
-                {money(ticketExitoso.resultado?.total_pago || ticketExitoso.total || 0)}
-              </h3>
-              <p className="small faint">
-                Método: <strong>{METODOS_PAGO[ticketExitoso.metodo] || ticketExitoso.metodo}</strong> · {fechaHora(ticketExitoso.fecha)}
-              </p>
+          <div className="receipt stack" style={{ gap: 14 }}>
+            <div className="receipt-header" style={{ textAlign: 'center', borderBottom: '1px dashed var(--border)', paddingBottom: 12 }}>
+              <div style={{ fontSize: 24 }}>💈</div>
+              <strong style={{ fontSize: 18, color: 'var(--gold)' }}>Elite Barber Studio</strong>
+              <div className="faint small">{fechaHora(ticketExitoso.fecha)}</div>
             </div>
 
-            <div className="receipt">
+            <div className="receipt-row">
+              <span className="muted">Cliente:</span>
+              <strong>{ticketExitoso.cliente} {ticketExitoso.esNuevo ? '⭐ (Nuevo)' : ''}</strong>
+            </div>
+
+            {ticketExitoso.telefono && (
               <div className="receipt-row">
-                <span className="muted">Cliente:</span>
-                <strong>{ticketExitoso.cita?.cliente}</strong>
+                <span className="muted">Celular:</span>
+                <strong className="mono">{ticketExitoso.telefono}</strong>
               </div>
-              <div className="receipt-row">
-                <span className="muted">Atendido por:</span>
-                <strong>{ticketExitoso.cita?.empleado?.nombre}</strong>
+            )}
+
+            <div className="receipt-row">
+              <span className="muted">Profesional:</span>
+              <span>{ticketExitoso.profesional}</span>
+            </div>
+
+            <div className="receipt-row">
+              <span className="muted">Servicio / Ítems:</span>
+              <span>{ticketExitoso.servicio}</span>
+            </div>
+
+            <div className="receipt-row">
+              <span className="muted">Método de Pago:</span>
+              <span className="badge badge-outline">
+                {ticketExitoso.metodo === 'efectivo' ? '💵 Efectivo' : ticketExitoso.metodo === 'tarjeta' ? '💳 Tarjeta' : `📲 ${ticketExitoso.banco || 'Nequi'} ${ticketExitoso.referencia ? `#${ticketExitoso.referencia}` : ''}`}
+              </span>
+            </div>
+
+            <div className="receipt-divider" />
+
+            <div className="receipt-row total">
+              <span>Total Cobrado:</span>
+              <span className="gold-text mono font-bold" style={{ fontSize: 22 }}>
+                {money(ticketExitoso.precio)}
+              </span>
+            </div>
+
+            <div className="grid grid-2 mt-8" style={{ gap: 10 }}>
+              <div style={{ background: 'rgba(239, 68, 68, 0.08)', padding: 8, borderRadius: 6 }}>
+                <div className="faint small">Comisión Personal (50%):</div>
+                <strong className="mono" style={{ color: 'hsl(0, 80%, 70%)' }}>
+                  {money(ticketExitoso.comision)}
+                </strong>
               </div>
-              <div className="receipt-row">
-                <span className="muted">Servicios Realizados:</span>
-                <span className="mono">{money(ticketExitoso.subtotalServicio || ticketExitoso.cita?.precio || 0)}</span>
-              </div>
-              {ticketExitoso.extras?.map((x) => (
-                <div className="receipt-row faint small" key={x.id}>
-                  <span>· Extra: {x.nombre}</span>
-                  <span className="mono">+{money(x.precio)}</span>
-                </div>
-              ))}
-              {ticketExitoso.adicionalManual > 0 && (
-                <div className="receipt-row faint small">
-                  <span>· {ticketExitoso.conceptoAdicional || 'Extra en silla'}:</span>
-                  <span className="mono">+{money(ticketExitoso.adicionalManual)}</span>
-                </div>
-              )}
-              {ticketExitoso.productosComprados?.map(({ producto, cantidad }) => (
-                <div className="receipt-row" key={producto?.id}>
-                  <span className="faint small">
-                    🛍️ Prod: {producto?.nombre} (x{cantidad})
-                  </span>
-                  <span className="mono small">{money((producto?.precio_venta || 0) * cantidad)}</span>
-                </div>
-              ))}
-              <div className="receipt-row total">
-                <span>Comisión para el Barbero/a:</span>
-                <span style={{ color: 'var(--green)' }}>
-                  {money(ticketExitoso.resultado?.comision_empleado || ticketExitoso.comision || 0)}
-                </span>
-              </div>
-              <div className="receipt-row" style={{ color: 'var(--gold)', fontWeight: 600 }}>
-                <span>Ingreso Neto para la Barbería:</span>
-                <span className="mono">
-                  {money(ticketExitoso.gananciaLocalTotal || ((ticketExitoso.resultado?.total_pago || 0) - (ticketExitoso.resultado?.comision_empleado || 0)))}
-                </span>
+              <div style={{ background: 'rgba(34, 197, 94, 0.08)', padding: 8, borderRadius: 6 }}>
+                <div className="faint small">Ganancia Barbería:</div>
+                <strong className="mono" style={{ color: 'var(--green)' }}>
+                  {money(ticketExitoso.gananciaLocal)}
+                </strong>
               </div>
             </div>
           </div>
         )}
-      </Modal>
-
-      {/* Modal de Cobro Rápido Directo en Mostrador */}
-      <Modal
-        open={modalCobroDirecto}
-        onClose={() => setModalCobroDirecto(false)}
-        title="Cobro Directo en Mostrador"
-        subtitle="Registra al instante el corte, barba, cejas o uñas del cliente, calcula la comisión y cobra."
-        size="lg"
-        footer={
-          <div className="row-between wrap" style={{ width: '100%', gap: 12 }}>
-            <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-              <span className="faint small">Total a cobrar:</span>
-              <strong className="gold-text mono" style={{ fontSize: 20 }}>
-                {money(calculosDirecto.total)}
-              </strong>
-            </div>
-            <div className="row" style={{ gap: 8 }}>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => setModalCobroDirecto(false)}
-                disabled={processing}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary btn-lg"
-                onClick={handleGuardarCobroDirecto}
-                disabled={processing || !cobroDirectoForm.empleado_id || !cobroDirectoForm.servicio_id}
-                id="caja-directo-submit"
-              >
-                {processing ? <Spinner /> : <><Icon name="checkCircle" /> Cobrar y Liquidar</>}
-              </button>
-            </div>
-          </div>
-        }
-      >
-        <form onSubmit={handleGuardarCobroDirecto} className="col" style={{ gap: 18 }}>
-          {/* Selector de Área */}
-          <div className="segmented">
-            <button
-              type="button"
-              className={areaDirecto === 'barberia' ? 'active' : ''}
-              onClick={() => {
-                setAreaDirecto('barberia')
-                const emps = empleados.filter((e) => e.area === 'barberia')
-                const servs = servicios.filter((s) => !s.area || s.area === 'barberia')
-                setCobroDirectoForm((prev) => ({
-                  ...prev,
-                  empleado_id: emps[0]?.id || '',
-                  servicio_id: servs[0]?.id || '',
-                  servicios_extras: [],
-                }))
-              }}
-            >
-              <Icon name="scissors" /> Barbería (Caballeros)
-            </button>
-            <button
-              type="button"
-              className={areaDirecto === 'women' ? 'active' : ''}
-              onClick={() => {
-                setAreaDirecto('women')
-                const emps = empleados.filter((e) => e.area === 'women')
-                const servs = servicios.filter((s) => !s.area || s.area === 'women')
-                setCobroDirectoForm((prev) => ({
-                  ...prev,
-                  empleado_id: emps[0]?.id || '',
-                  servicio_id: servs[0]?.id || '',
-                  servicios_extras: [],
-                }))
-              }}
-            >
-              <Icon name="sparkles" /> Zona Women (Damas / Uñas)
-            </button>
-          </div>
-
-          <div className="form-grid">
-            {/* 1. Barbero / Profesional */}
-            <div className="field span-2">
-              <label className="label">1. ¿Quién atendió al cliente? (Barbero / Estilista)</label>
-              <select
-                className="select"
-                value={cobroDirectoForm.empleado_id}
-                onChange={(e) => setCobroDirectoForm({ ...cobroDirectoForm, empleado_id: e.target.value })}
-                required
-              >
-                <option value="" disabled>Selecciona el profesional...</option>
-                {empleados
-                  .filter((e) => e.area === areaDirecto)
-                  .map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.nombre} · {AREAS[emp.area]?.label || emp.area} ({emp.porcentaje_comision}% comisión)
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            {/* 2. Servicio Principal */}
-            <div className="field span-2">
-              <label className="label">2. Servicio Principal Realizado</label>
-              <select
-                className="select"
-                value={cobroDirectoForm.servicio_id}
-                onChange={(e) => setCobroDirectoForm({ ...cobroDirectoForm, servicio_id: e.target.value })}
-                required
-              >
-                <option value="" disabled>Selecciona el servicio...</option>
-                {servicios
-                  .filter((s) => !s.area || s.area === areaDirecto)
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.nombre} — {money(s.precio)} ({duracion(s.duracion_minutos)})
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            {/* 3. Servicios Adicionales (Cejas, Barba, Extras) */}
-            <div className="field span-2">
-              <label className="label">
-                3. ¿Se realizó algún servicio adicional? (Ej. Cejas, Barba, Uñas adicionales)
-              </label>
-              <p className="faint small mb-8">
-                Toca para sumar otros servicios al mismo cobro y el total se calculará solo con su precio preestablecido:
-              </p>
-              <div className="row wrap" style={{ gap: 8 }}>
-                {servicios
-                  .filter((s) => (!s.area || s.area === areaDirecto) && s.id !== cobroDirectoForm.servicio_id)
-                  .map((s) => {
-                    const check = cobroDirectoForm.servicios_extras.includes(s.id)
-                    return (
-                      <button
-                        type="button"
-                        key={s.id}
-                        onClick={() => toggleServicioExtra(s.id)}
-                        className={`btn btn-sm ${check ? 'btn-primary' : 'btn-outline'}`}
-                        style={{ fontSize: 13, padding: '5px 12px' }}
-                      >
-                        {check ? '✓ ' : '+ '} {s.nombre} ({money(s.precio)})
-                      </button>
-                    )
-                  })}
-              </div>
-            </div>
-
-            {/* 4. Nombre del Cliente */}
-            <div className="field">
-              <label className="label">Nombre del Cliente (Opcional)</label>
-              <input
-                className="input"
-                placeholder="Ej. Juan Pérez / Cliente en mostrador"
-                value={cobroDirectoForm.cliente}
-                onChange={(e) => setCobroDirectoForm({ ...cobroDirectoForm, cliente: e.target.value })}
-              />
-            </div>
-
-            <div className="field">
-              <label className="label">Notas (Opcional)</label>
-              <input
-                className="input"
-                placeholder="Ej. Corte degradado alto + cejas"
-                value={cobroDirectoForm.notas}
-                onChange={(e) => setCobroDirectoForm({ ...cobroDirectoForm, notas: e.target.value })}
-              />
-            </div>
-          </div>
-
-          {/* 5. Venta de Productos (Opcional) */}
-          <div style={{ padding: 14, background: 'var(--surface-2)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
-            <label className="label" style={{ marginBottom: 6, display: 'block' }}>
-              ¿El cliente compró algún producto físico? (Cera, aceite, esmalte, etc.)
-            </label>
-            <div className="row wrap" style={{ gap: 8 }}>
-              {inventario.slice(0, 6).map((prod) => {
-                const cant = cobroDirectoForm.productosVenta[prod.id] || 0
-                return (
-                  <div
-                    key={prod.id}
-                    className="row"
-                    style={{
-                      background: cant > 0 ? 'rgba(217, 119, 6, 0.15)' : 'var(--surface)',
-                      border: `1px solid ${cant > 0 ? 'var(--gold)' : 'var(--border)'}`,
-                      padding: '4px 8px',
-                      borderRadius: 'var(--radius)',
-                      gap: 8,
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span style={{ fontSize: 13, fontWeight: cant > 0 ? 600 : 400 }}>
-                      {prod.nombre} ({money(prod.precio_venta)})
-                    </span>
-                    <div className="row" style={{ gap: 4 }}>
-                      {cant > 0 && (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-xs"
-                          style={{ padding: '0 6px', height: 22 }}
-                          onClick={() => modificarCantidadDirecto(prod, -1)}
-                        >
-                          -
-                        </button>
-                      )}
-                      {cant > 0 && <span className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{cant}</span>}
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-xs"
-                        style={{ padding: '0 6px', height: 22 }}
-                        onClick={() => modificarCantidadDirecto(prod, 1)}
-                      >
-                        +
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* 6. Método de Pago */}
-          <div>
-            <label className="label mb-8" style={{ display: 'block' }}>
-              4. ¿Cómo pagó el cliente?
-            </label>
-            <div className="row payment-methods" style={{ gap: 12 }}>
-              <button
-                type="button"
-                className={`pay-method ${cobroDirectoForm.metodo === 'efectivo' ? 'active' : ''}`}
-                onClick={() => setCobroDirectoForm({ ...cobroDirectoForm, metodo: 'efectivo' })}
-              >
-                <div className="pm-icon" style={{ color: 'var(--green)' }}>
-                  <Icon name="bill" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 600 }}>Efectivo</div>
-                  <div className="faint small">Billetes y monedas</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                className={`pay-method ${cobroDirectoForm.metodo === 'transferencia' ? 'active' : ''}`}
-                onClick={() => setCobroDirectoForm({ ...cobroDirectoForm, metodo: 'transferencia' })}
-              >
-                <div className="pm-icon" style={{ color: 'hsl(300, 75%, 75%)' }}>
-                  <Icon name="smartphone" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 600 }}>Transferencia</div>
-                  <div className="faint small">Nequi / Daviplata / Bre-B</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                className={`pay-method ${cobroDirectoForm.metodo === 'tarjeta' ? 'active' : ''}`}
-                onClick={() => setCobroDirectoForm({ ...cobroDirectoForm, metodo: 'tarjeta' })}
-              >
-                <div className="pm-icon" style={{ color: 'hsl(190, 85%, 65%)' }}>
-                  <Icon name="creditCard" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 600 }}>Tarjeta</div>
-                  <div className="faint small">Débito / Crédito / Datáfono</div>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* 7. Resumen Financiero y Liquidación de Comisión */}
-          <div className="receipt">
-            <div className="receipt-row">
-              <span className="muted">Servicio(s) Seleccionado(s):</span>
-              <strong className="mono">{money(calculosDirecto.subtotalServicio)}</strong>
-            </div>
-            {calculosDirecto.subtotalProductos > 0 && (
-              <div className="receipt-row">
-                <span className="muted">Productos de venta:</span>
-                <strong className="mono">{money(calculosDirecto.subtotalProductos)}</strong>
-              </div>
-            )}
-            <div className="receipt-row total">
-              <span>Total a Cobrar</span>
-              <span className="gold-text">{money(calculosDirecto.total)}</span>
-            </div>
-            <div className="commission-box mt-8">
-              <div className="row" style={{ gap: 10 }}>
-                <Icon name="percent" size={20} style={{ color: 'var(--green)' }} />
-                <div>
-                  <div style={{ fontWeight: 600, color: 'var(--green)' }}>
-                    Comisión para {calculosDirecto.emp?.nombre || 'el profesional'}: {money(calculosDirecto.comision)}
-                  </div>
-                  <div className="faint small">
-                    Calculado automáticamente al {calculosDirecto.porcentaje}% · Ganancia neta para la barbería: {money(calculosDirecto.gananciaLocal)}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Modal de Cobro Familiar / Grupal (1 Sola Cuenta) */}
-      <Modal
-        open={modalCobroGrupo}
-        onClose={() => setModalCobroGrupo(false)}
-        title="👥 Cobro Familiar / Grupo (1 Sola Cuenta)"
-        subtitle="Cobra a una familia o grupo en una sola factura. Cada integrante tiene su propio barbero y sus comisiones se calculan por separado."
-        size="lg"
-        footer={
-          <div className="row-between wrap" style={{ width: '100%', gap: 12 }}>
-            <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-              <span className="faint small">Total Familia / Grupo:</span>
-              <strong className="gold-text mono" style={{ fontSize: 22 }}>
-                {money(calculosGrupo.totalPagar)}
-              </strong>
-            </div>
-            <div className="row" style={{ gap: 8 }}>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => setModalCobroGrupo(false)}
-                disabled={processing}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary btn-lg"
-                onClick={handleGuardarCobroGrupo}
-                disabled={processing || cobroGrupoForm.miembros.length === 0}
-                id="caja-grupo-submit"
-              >
-                {processing ? <Spinner size="sm" /> : <Icon name="check" />} Cobrar Cuenta Familiar ({money(calculosGrupo.totalPagar)})
-              </button>
-            </div>
-          </div>
-        }
-      >
-        <form onSubmit={handleGuardarCobroGrupo} className="stack" style={{ gap: 20 }}>
-          {/* Responsable de la cuenta */}
-          <div className="form-group">
-            <label className="form-label required">Nombre del Responsable / Familia</label>
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Ej: Familia Gómez / Papá Juan / Los Panas"
-              value={cobroGrupoForm.responsable}
-              onChange={(e) => setCobroGrupoForm({ ...cobroGrupoForm, responsable: e.target.value })}
-              required
-            />
-            <span className="form-hint">
-              Este nombre identificará la factura unificada. Todos los servicios de los integrantes quedarán registrados bajo esta cuenta.
-            </span>
-          </div>
-
-          {/* Integrantes del grupo */}
-          <div className="stack" style={{ gap: 12 }}>
-            <div className="row-between" style={{ alignItems: 'center' }}>
-              <label className="form-label" style={{ margin: 0 }}>
-                Integrantes y Servicios ({cobroGrupoForm.miembros.length})
-              </label>
-              <button
-                type="button"
-                className="btn btn-outline btn-sm"
-                onClick={agregarMiembroGrupo}
-                style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
-              >
-                <Icon name="plus" size={14} /> + Agregar Otro Integrante
-              </button>
-            </div>
-
-            {cobroGrupoForm.miembros.map((miembro, idx) => {
-              const servActual = servicios.find((s) => s.id === miembro.servicio_id)
-              const empActual = empleados.find((e) => e.id === miembro.empleado_id)
-              const extrasMiembro = servicios.filter((s) => miembro.servicios_extras?.includes(s.id))
-              const subtotalM = Number(servActual?.precio || 0) + extrasMiembro.reduce((sum, x) => sum + Number(x.precio || 0), 0)
-
-              return (
-                <div
-                  key={miembro.id}
-                  style={{
-                    background: 'var(--surface-hover)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius)',
-                    padding: 14,
-                  }}
-                  className="stack"
-                >
-                  <div className="row-between" style={{ alignItems: 'center', marginBottom: 6 }}>
-                    <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-                      <span
-                        className="badge badge-gold"
-                        style={{ width: 24, height: 24, padding: 0, justifyContent: 'center' }}
-                      >
-                        {idx + 1}
-                      </span>
-                      <input
-                        type="text"
-                        className="form-control"
-                        style={{ maxWidth: 200, padding: '4px 8px', height: 32, fontWeight: 600 }}
-                        placeholder="Nombre / Parentesco"
-                        value={miembro.nombre}
-                        onChange={(e) => actualizarMiembroGrupo(miembro.id, 'nombre', e.target.value)}
-                      />
-                    </div>
-                    <div className="row" style={{ gap: 10, alignItems: 'center' }}>
-                      <span className="mono gold-text font-bold">{money(subtotalM)}</span>
-                      {cobroGrupoForm.miembros.length > 1 && (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          style={{ color: 'var(--red)', padding: 4 }}
-                          onClick={() => quitarMiembroGrupo(miembro.id)}
-                          title="Eliminar este integrante"
-                        >
-                          <Icon name="trash" size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-2" style={{ gap: 10 }}>
-                    <div className="form-group" style={{ margin: 0 }}>
-                      <label className="form-label small" style={{ marginBottom: 4 }}>
-                        Barbero / Profesional
-                      </label>
-                      <select
-                        className="form-control"
-                        value={miembro.empleado_id}
-                        onChange={(e) => actualizarMiembroGrupo(miembro.id, 'empleado_id', e.target.value)}
-                        required
-                      >
-                        <option value="">-- Selecciona Barbero --</option>
-                        {empleados.filter((e) => e.activo !== false).map((emp) => (
-                          <option key={emp.id} value={emp.id}>
-                            {emp.nombre} ({emp.area === 'barberia' ? 'Barbero' : 'Estilista'} · {emp.porcentaje_comision}% com.)
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="form-group" style={{ margin: 0 }}>
-                      <label className="form-label small" style={{ marginBottom: 4 }}>
-                        Servicio Principal
-                      </label>
-                      <select
-                        className="form-control"
-                        value={miembro.servicio_id}
-                        onChange={(e) => actualizarMiembroGrupo(miembro.id, 'servicio_id', e.target.value)}
-                        required
-                      >
-                        <option value="">-- Selecciona Servicio --</option>
-                        {servicios.filter((s) => s.activo !== false).map((serv) => (
-                          <option key={serv.id} value={serv.id}>
-                            {serv.nombre} — {money(serv.precio)}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Extras rápidos sugeridos (Barba, Cejas, etc.) */}
-                  <div style={{ marginTop: 6 }}>
-                    <span className="faint small" style={{ display: 'block', marginBottom: 4 }}>
-                      + Extras opcionales para {miembro.nombre}:
-                    </span>
-                    <div className="row wrap" style={{ gap: 6 }}>
-                      {servicios
-                        .filter((s) => s.activo !== false && s.id !== miembro.servicio_id && Number(s.precio) <= 20000)
-                        .slice(0, 6)
-                        .map((extra) => {
-                          const activo = miembro.servicios_extras?.includes(extra.id)
-                          return (
-                            <button
-                              key={extra.id}
-                              type="button"
-                              className={`chip ${activo ? 'chip-active' : ''}`}
-                              onClick={() => toggleExtraMiembro(miembro.id, extra.id)}
-                              style={{
-                                fontSize: 11,
-                                padding: '3px 8px',
-                                border: activo ? '1px solid var(--gold)' : '1px solid var(--border)',
-                                background: activo ? 'var(--gold-soft)' : 'transparent',
-                                color: activo ? 'var(--gold)' : 'var(--muted)',
-                              }}
-                            >
-                              {activo ? '✓ ' : '+ '}
-                              {extra.nombre} ({money(extra.precio)})
-                            </button>
-                          )
-                        })}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Método de Pago */}
-          <div className="form-group">
-            <label className="form-label required">Método de Pago de la Cuenta Familiar</label>
-            <div className="pay-methods-grid">
-              <button
-                type="button"
-                className={`pay-method ${cobroGrupoForm.metodo === 'efectivo' ? 'active' : ''}`}
-                onClick={() => setCobroGrupoForm({ ...cobroGrupoForm, metodo: 'efectivo' })}
-              >
-                <div className="pm-icon" style={{ color: 'hsl(142, 70%, 55%)' }}>
-                  <Icon name="cash" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 600 }}>Efectivo</div>
-                  <div className="faint small">Pago en caja física</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                className={`pay-method ${cobroGrupoForm.metodo === 'transferencia' ? 'active' : ''}`}
-                onClick={() => setCobroGrupoForm({ ...cobroGrupoForm, metodo: 'transferencia' })}
-              >
-                <div className="pm-icon" style={{ color: 'hsl(300, 75%, 75%)' }}>
-                  <Icon name="smartphone" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 600 }}>Transferencia</div>
-                  <div className="faint small">Nequi / Daviplata / Bre-B</div>
-                </div>
-              </button>
-
-              <button
-                type="button"
-                className={`pay-method ${cobroGrupoForm.metodo === 'tarjeta' ? 'active' : ''}`}
-                onClick={() => setCobroGrupoForm({ ...cobroGrupoForm, metodo: 'tarjeta' })}
-              >
-                <div className="pm-icon" style={{ color: 'hsl(190, 85%, 65%)' }}>
-                  <Icon name="creditCard" />
-                </div>
-                <div>
-                  <div style={{ fontWeight: 600 }}>Tarjeta</div>
-                  <div className="faint small">Datáfono / Débito / Crédito</div>
-                </div>
-              </button>
-            </div>
-          </div>
-
-          {/* Resumen Financiero Desglosado por Barbero */}
-          <div className="receipt">
-            <div style={{ fontWeight: 600, marginBottom: 8, color: 'var(--text)' }}>
-              Desglose de Comisiones por Profesional:
-            </div>
-            {calculosGrupo.porBarbero.length === 0 ? (
-              <p className="faint small">Selecciona barberos y servicios para ver el desglose.</p>
-            ) : (
-              calculosGrupo.porBarbero.map((b) => (
-                <div key={b.nombre} className="receipt-row" style={{ padding: '4px 0' }}>
-                  <span>
-                    <strong style={{ color: 'var(--gold)' }}>{b.nombre}</strong>
-                    <span className="faint small"> ({b.clientes.length} pers. · {b.porcentaje}%)</span>
-                  </span>
-                  <span className="mono" style={{ color: 'var(--green)' }}>
-                    Comisión: {money(b.comision)} <span className="faint small">(de {money(b.totalServicios)})</span>
-                  </span>
-                </div>
-              ))
-            )}
-
-            <div className="receipt-divider" style={{ margin: '10px 0' }} />
-
-            <div className="receipt-row">
-              <span className="muted">Subtotal Servicios:</span>
-              <strong className="mono">{money(calculosGrupo.subtotalServicios)}</strong>
-            </div>
-
-            <div className="receipt-row total">
-              <span>Total Unificado a Cobrar</span>
-              <span className="gold-text">{money(calculosGrupo.totalPagar)}</span>
-            </div>
-
-            <div className="commission-box mt-8">
-              <div className="row" style={{ gap: 10 }}>
-                <Icon name="percent" size={20} style={{ color: 'var(--green)' }} />
-                <div>
-                  <div style={{ fontWeight: 600, color: 'var(--green)' }}>
-                    Total Comisiones a Barberos: {money(calculosGrupo.totalComisiones)}
-                  </div>
-                  <div className="faint small">
-                    Ganancia neta para la Barbería: {money(calculosGrupo.gananciaLocal)}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </form>
       </Modal>
     </div>
   )

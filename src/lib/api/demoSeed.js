@@ -42,14 +42,14 @@ export function buildSeed() {
     usuarios.push({
       id: uid(), barberia_id: B, rol: 'empleado', nombre: n, area: 'barberia', activo: true,
       email: `${n.split(' ')[0].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}@demo.com`,
-      porcentaje_comision: [40, 45, 50][i % 3],
+      porcentaje_comision: 50,
     }),
   )
   women.forEach((n, i) =>
     usuarios.push({
       id: uid(), barberia_id: B, rol: 'empleado', nombre: n, area: 'women', activo: true,
       email: `${n.split(' ')[0].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}@demo.com`,
-      porcentaje_comision: [45, 50][i % 2],
+      porcentaje_comision: 50,
     }),
   )
   usuarios.forEach((u) => (u.password = 'demo123'))

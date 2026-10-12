@@ -28,7 +28,7 @@ export default function Configuracion() {
     nombre: '',
     email: '',
     area: 'barberia',
-    porcentaje_comision: 45,
+    porcentaje_comision: 50,
   })
 
   const [formServicio, setFormServicio] = useState({
@@ -68,18 +68,23 @@ export default function Configuracion() {
     cargarDatos()
   }, [cargarDatos])
 
-  // --- Handlers de Empleados & Invitaciones ---
+  // Handlers de Empleados & Invitaciones
   const handleCrearInvitacion = async (e) => {
     e.preventDefault()
     setGuardando(true)
     try {
+      const emailFinal =
+        formInvitar.email.trim() ||
+        `${formInvitar.nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '.')}.${Date.now().toString(36).slice(-4)}@barberia.local`
+
       await api.createInvitacion({
         ...formInvitar,
-        porcentaje_comision: Number(formInvitar.porcentaje_comision),
+        email: emailFinal,
+        porcentaje_comision: Number(formInvitar.porcentaje_comision || 50),
       })
-      toast.success(`Invitación enviada para ${formInvitar.email}`)
+      toast.success(`Profesional ${formInvitar.nombre} registrado exitosamente.`)
       setModalInvitar(false)
-      setFormInvitar({ nombre: '', email: '', area: 'barberia', porcentaje_comision: 45 })
+      setFormInvitar({ nombre: '', email: '', area: 'barberia', porcentaje_comision: 50 })
       cargarDatos()
     } catch (err) {
       toast.error(err)
@@ -559,16 +564,18 @@ export default function Configuracion() {
           </div>
 
           <div className="field span-2">
-            <label className="label" htmlFor="inv-email">Correo Electrónico</label>
+            <label className="label" htmlFor="inv-email">Correo Electrónico (Opcional)</label>
             <input
               id="inv-email"
               type="email"
               className="input"
-              required
-              placeholder="mateo@ejemplo.com"
+              placeholder="Opcional (los barberos no inician sesión)"
               value={formInvitar.email}
               onChange={(e) => setFormInvitar({ ...formInvitar, email: e.target.value })}
             />
+            <span className="faint small" style={{ display: 'block', marginTop: 4 }}>
+              * Los profesionales no tienen acceso al sistema; solo tú administras la caja y la agenda.
+            </span>
           </div>
 
           <div className="field">
