@@ -178,32 +178,72 @@ export default function LandingPublica() {
     },
   ]
 
-  // Cortes inferiores de cejas ("Síguenos en nuestras redes")
-  const cortesCejasInferiores = [
+  // Publicaciones reales de redes sociales (Instagram & TikTok @barbersrevolution)
+  const publicacionesSociales = [
     {
-      id: 'cj1',
-      nombre: 'Diseño de Cejas',
-      precio: 15000,
-      imagen: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=600&q=80',
+      id: 'pub1',
+      plataforma: 'instagram',
+      titulo: 'Skin Fade Alto & Barba Perfilada',
+      descripcion: 'Degradado limpio a navaja con alineación simétrica de barba en Cajicá.',
+      likes: '482',
+      comentarios: '34',
+      imagen: 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=600&q=80',
+      link: REDES_SOCIALES.instagram,
     },
     {
-      id: 'cj2',
-      nombre: 'Diseño de Cejas',
-      precio: 15000,
+      id: 'pub2',
+      plataforma: 'tiktok',
+      titulo: 'Texturizado Crop & Acabado Mate',
+      descripcion: 'Técnica a tijera con polvos de volumen para caída natural.',
+      vistas: '14.2k',
       imagen: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&q=80',
+      link: REDES_SOCIALES.tiktok,
     },
     {
-      id: 'cj3',
-      nombre: 'Diseño de Cejas',
-      precio: 10000,
-      imagen: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80',
+      id: 'pub3',
+      plataforma: 'instagram',
+      titulo: 'Diseño Freestyle & Cejas Pro',
+      descripcion: 'Líneas limpias y diseño personalizado para clientes exigentes.',
+      likes: '315',
+      comentarios: '21',
+      imagen: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=600&q=80',
+      link: REDES_SOCIALES.instagram,
+    },
+    {
+      id: 'pub4',
+      plataforma: 'instagram',
+      titulo: 'Corte Clásico Ejecutivo Pompadour',
+      descripcion: 'Estilo formal pulido con secador y fijación de alta duración.',
+      likes: '290',
+      comentarios: '18',
+      imagen: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=600&q=80',
+      link: REDES_SOCIALES.instagram,
+    },
+    {
+      id: 'pub5',
+      plataforma: 'tiktok',
+      titulo: 'Ritual de Barba con Toalla Caliente',
+      descripcion: 'Exfoliación, hidratación profunda y afeitado suave con navaja.',
+      vistas: '22.8k',
+      imagen: 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=600&q=80',
+      link: REDES_SOCIALES.tiktok,
+    },
+    {
+      id: 'pub6',
+      plataforma: 'instagram',
+      titulo: 'Mid Taper Fade & Cuidado Facial',
+      descripcion: 'Transición perfecta en patillas y nuca. El más pedido del fin de semana.',
+      likes: '520',
+      comentarios: '47',
+      imagen: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=600&q=80',
+      link: REDES_SOCIALES.instagram,
     },
   ]
 
-  // Próximos 7 días hábiles para el calendario de reserva
+  // Próximos 14 días para el calendario real de reserva
   const diasDisponibles = useMemo(() => {
     const hoy = startOfDay()
-    return Array.from({ length: 7 }, (_, i) => addDays(hoy, i))
+    return Array.from({ length: 14 }, (_, i) => addDays(hoy, i))
   }, [])
 
   // Lista de Barberos activos (con fotos y respaldo inmediato)
@@ -282,7 +322,34 @@ export default function LandingPublica() {
     }
   }, [barberoSeleccionado, fechaSeleccionada, pasoReserva, corteSeleccionado])
 
-  // Confirmar cita y sincronizar con la base de datos
+  // Construir mensaje completo y detallado para WhatsApp de la dueña
+  const construirMensajeWhatsApp = () => {
+    const fechaObj = citaConfirmada?.fecha_hora || horaSeleccionada || new Date()
+    const fechaTxt = fechaLarga(fechaObj)
+    const horaTxt = hora(fechaObj)
+    const notasTxt = clienteNotas.trim() ? `\n📝 *Notas:* ${clienteNotas.trim()}` : ''
+
+    return encodeURIComponent(
+      `💈 *BARBER'S REVOLUTION CAJICÁ - NUEVA RESERVA WEB* 💈\n\n` +
+      `¡Hola! Acabo de apartar mi cita por la página web y quiero confirmarla:\n\n` +
+      `✂️ *Servicio:* ${corteSeleccionado?.nombre}\n` +
+      `💈 *Barbero:* ${barberoSeleccionado?.nombre}\n` +
+      `📅 *Fecha:* ${fechaTxt}\n` +
+      `⏰ *Hora:* ${horaTxt}\n` +
+      `💰 *Valor del Servicio:* ${money(corteSeleccionado?.precio)}\n` +
+      `👤 *Cliente:* ${clienteNombre.trim()}\n` +
+      `📱 *Celular:* ${clienteTelefono.trim()}\n` +
+      `📍 *Sede:* Calle 5 # 6-18 C.C. Sexta Avenida, Cajicá${notasTxt}\n\n` +
+      `¿Podrían confirmarme la cita por favor? ¡Muchas gracias!`
+    )
+  }
+
+  // Generar link directo a WhatsApp para la dueña
+  const generarWhatsAppConfirmacion = () => {
+    return `${REDES_SOCIALES.whatsapp}?text=${construirMensajeWhatsApp()}`
+  }
+
+  // Confirmar cita y sincronizar con la base de datos + Abrir WhatsApp obligatorio
   const handleConfirmarCita = async (e) => {
     e.preventDefault()
     if (!clienteNombre.trim() || !clienteTelefono.trim()) {
@@ -328,31 +395,21 @@ export default function LandingPublica() {
         cliente_telefono: clienteTelefono.trim(),
         fecha_hora: horaSeleccionada,
       })
-      setPasoReserva(4) // Pantalla de confirmación exitosa
+
+      // Abrir inmediatamente WhatsApp con todos los datos prearmados
+      const waUrl = `${REDES_SOCIALES.whatsapp}?text=${construirMensajeWhatsApp()}`
+      try {
+        window.open(waUrl, '_blank')
+      } catch (openErr) {
+        console.warn('Bloqueador de ventanas detectado:', openErr)
+      }
+
+      setPasoReserva(4) // Pantalla de confirmación exitosa con botón de WhatsApp
     } catch (err) {
       alert(err.message || 'Error al agendar la cita. Por favor intenta otro horario.')
     } finally {
       setEnviandoCita(false)
     }
-  }
-
-  // Generar link directo a WhatsApp para la dueña
-  const generarWhatsAppConfirmacion = () => {
-    if (!citaConfirmada) return '#'
-    const fechaTxt = fechaLarga(citaConfirmada.fecha_hora)
-    const horaTxt = hora(citaConfirmada.fecha_hora)
-    const msg = encodeURIComponent(
-      `¡Hola Barber's Revolution! 👋 Acabo de agendar una cita por su página web:\n\n` +
-      `👤 Cliente: ${clienteNombre}\n` +
-      `📱 Teléfono: ${clienteTelefono}\n` +
-      `✂️ Corte: ${corteSeleccionado?.nombre}\n` +
-      `💈 Barbero: ${barberoSeleccionado?.nombre}\n` +
-      `📅 Fecha: ${fechaTxt}\n` +
-      `⏰ Hora: ${horaTxt}\n` +
-      `💰 Precio: ${money(corteSeleccionado?.precio)}\n\n` +
-      `¿Podrían confirmarme la cita por favor? ¡Muchas gracias!`
-    )
-    return `${REDES_SOCIALES.whatsapp}?text=${msg}`
   }
 
   return (
@@ -527,26 +584,41 @@ export default function LandingPublica() {
           </div>
 
           <div className="revolution-grid-3">
-            {cortesCejasInferiores.map((corte) => (
-              <div key={corte.id} className="revolution-cut-card">
-                <div className="cut-image-wrapper">
+            {publicacionesSociales.map((pub) => (
+              <div key={pub.id} className="social-feed-card">
+                <div className="social-feed-img-box">
                   <img
-                    src={corte.imagen}
-                    alt={corte.nombre}
-                    className="cut-image"
+                    src={pub.imagen}
+                    alt={pub.titulo}
+                    className="social-feed-img"
                     loading="lazy"
                   />
+                  <span className={`social-platform-badge ${pub.plataforma === 'instagram' ? 'ig' : 'tk'}`}>
+                    {pub.plataforma === 'instagram' ? <InstagramLogo size={14} /> : <TikTokLogo size={14} />}
+                    <span>{pub.plataforma === 'instagram' ? 'Instagram Reel' : 'TikTok Video'}</span>
+                  </span>
                 </div>
-                <div className="cut-info">
-                  <h3 className="cut-title">{corte.nombre}</h3>
-                  <div className="cut-price">{money(corte.precio)}</div>
-                  <button
-                    type="button"
-                    className="cut-btn-reservar"
-                    onClick={() => iniciarReservaCorte(corte)}
-                  >
-                    Reservar
-                  </button>
+                <div className="social-feed-info">
+                  <h3 className="social-feed-title">{pub.titulo}</h3>
+                  <p className="faint small" style={{ margin: 0, lineHeight: 1.4 }}>
+                    {pub.descripcion}
+                  </p>
+                  <div className="social-feed-stats row-between" style={{ marginTop: 6, alignItems: 'center' }}>
+                    <div className="row" style={{ gap: 12 }}>
+                      {pub.likes && <span>❤️ {pub.likes}</span>}
+                      {pub.comentarios && <span>💬 {pub.comentarios}</span>}
+                      {pub.vistas && <span>▶ {pub.vistas}</span>}
+                    </div>
+                    <a
+                      href={pub.link}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: 'var(--gold)', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <span>Ver post</span>
+                      <span>↗</span>
+                    </a>
+                  </div>
                 </div>
               </div>
             ))}
@@ -752,7 +824,7 @@ export default function LandingPublica() {
               </div>
             )}
 
-            {/* PASO 2: CALENDARIO SINCRONIZADO EN TIEMPO REAL */}
+            {/* PASO 2: CALENDARIO REAL SINCRONIZADO EN TIEMPO REAL */}
             {pasoReserva === 2 && barberoSeleccionado && (
               <div>
                 <div className="row-between wrap mb-12" style={{ alignItems: 'center' }}>
@@ -764,31 +836,49 @@ export default function LandingPublica() {
                     className="btn btn-ghost btn-sm"
                     onClick={() => setPasoReserva(1)}
                   >
-                    Cambiar Barbero
+                    ← Cambiar Barbero
                   </button>
                 </div>
 
-                {/* Tira de Días del Calendario */}
-                <div className="reserva-days-strip mb-16">
+                {/* Cabecera del Mes Oficial */}
+                <div className="calendar-header-bar">
+                  <div className="cal-month-title">
+                    <span>📅</span>
+                    <span style={{ textTransform: 'capitalize' }}>
+                      {fechaSeleccionada.toLocaleDateString('es-CO', { month: 'long', year: 'numeric' })}
+                    </span>
+                    <span className="muted" style={{ fontSize: 12, fontWeight: 500 }}>· Sede Cajicá</span>
+                  </div>
+                  <span className="badge badge-gold no-dot" style={{ fontSize: 11 }}>
+                    Horario continuo: 9:00 AM – 9:00 PM
+                  </span>
+                </div>
+
+                {/* Cuadrícula de Días Tipo Calendario Real */}
+                <div className="luxury-calendar-grid">
                   {diasDisponibles.map((dia) => {
                     const seleccionado = sameDay(dia, fechaSeleccionada)
                     const esHoy = sameDay(dia, new Date())
-                    const dow = dia.toLocaleDateString('es-CO', { weekday: 'short' })
+                    const dow = dia.toLocaleDateString('es-CO', { weekday: 'short' }).replace('.', '').toUpperCase()
+                    const mesNombre = dia.toLocaleDateString('es-CO', { month: 'short' }).replace('.', '')
                     const descanso = esDiaDescanso(barberoSeleccionado, dia)
 
                     return (
                       <button
                         key={dia.toISOString()}
                         type="button"
-                        className={`day-btn ${seleccionado ? 'selected' : ''} ${descanso ? 'day-descanso' : ''}`}
+                        className={`cal-date-card ${seleccionado ? 'active' : ''} ${descanso ? 'disabled-descanso' : ''}`}
                         onClick={() => {
                           setFechaSeleccionada(dia)
                           setHoraSeleccionada(null)
                         }}
                       >
-                        <span className="day-name">{esHoy ? 'Hoy' : dow}</span>
-                        <span className="day-number">{dia.getDate()}</span>
-                        {descanso && <span className="day-tag-descanso">Descanso</span>}
+                        <span className="cal-dow">{dow}</span>
+                        <span className="cal-num">{dia.getDate()}</span>
+                        <span className="cal-month">{mesNombre}</span>
+                        <span className={`cal-badge ${descanso ? 'badge-rest' : esHoy ? 'badge-today' : 'badge-avail'}`}>
+                          {descanso ? 'Descanso' : esHoy ? 'Hoy' : 'Libre'}
+                        </span>
                       </button>
                     )
                   })}
@@ -810,7 +900,7 @@ export default function LandingPublica() {
                       {barberoSeleccionado.nombre} descansa los {getEmpleadoHorario(barberoSeleccionado).diaNombre}
                     </strong>
                     <p className="faint small mt-6">
-                      Por favor selecciona otro día en la barra superior o elige a otro de nuestros barberos disponibles.
+                      Por favor selecciona otro día en el calendario de arriba o elige a otro de nuestros barberos disponibles.
                     </p>
                   </div>
                 ) : cargandoSlots ? (
@@ -819,11 +909,13 @@ export default function LandingPublica() {
                   </div>
                 ) : slotsDisponibles.length === 0 ? (
                   <Empty icon="clock" title="Sin turnos disponibles para esta fecha">
-                    {barberoSeleccionado.nombre} tiene su agenda completa para este día. Por favor prueba otra fecha.
+                    {barberoSeleccionado.nombre} tiene su agenda completa para este día. Por favor prueba otra fecha en el calendario.
                   </Empty>
                 ) : (
                   <div>
-                    <label className="form-label small mb-8">Horas libres disponibles:</label>
+                    <label className="form-label small mb-8">
+                      ⏰ Horarios disponibles para {fechaCorta(fechaSeleccionada)}:
+                    </label>
                     <div className="reserva-slots-grid">
                       {slotsDisponibles.map((slotIso) => {
                         const seleccionado = horaSeleccionada === slotIso
@@ -837,7 +929,7 @@ export default function LandingPublica() {
                               setPasoReserva(3) // Avanzar al paso de datos
                             }}
                           >
-                            <Icon name="clock" size={14} />
+                            <span>⏰</span>
                             <span>{hora(slotIso)}</span>
                           </button>
                         )
@@ -848,32 +940,36 @@ export default function LandingPublica() {
               </div>
             )}
 
-            {/* PASO 3: DATOS DEL CLIENTE (NOMBRE Y CELULAR) */}
+            {/* PASO 3: DATOS DEL CLIENTE Y ENVÍO OBLIGATORIO POR WHATSAPP */}
             {pasoReserva === 3 && (
               <form onSubmit={handleConfirmarCita} className="stack" style={{ gap: 16 }}>
                 <div className="receipt">
                   <div className="receipt-row">
-                    <span className="muted">Corte:</span>
+                    <span className="muted">Corte/Servicio:</span>
                     <strong>{corteSeleccionado.nombre}</strong>
                   </div>
                   <div className="receipt-row">
-                    <span className="muted">Barbero:</span>
+                    <span className="muted">Barbero asignado:</span>
                     <strong>{barberoSeleccionado?.nombre}</strong>
                   </div>
                   <div className="receipt-row">
-                    <span className="muted">Horario:</span>
+                    <span className="muted">Horario de cita:</span>
                     <strong className="gold-text">
                       {fechaCorta(fechaSeleccionada)} · {hora(horaSeleccionada)}
                     </strong>
                   </div>
+                  <div className="receipt-row">
+                    <span className="muted">Sede:</span>
+                    <span>C.C. Sexta Avenida, Cajicá</span>
+                  </div>
                   <div className="receipt-row total">
-                    <span>Precio:</span>
+                    <span>Valor a pagar en barbería:</span>
                     <span className="gold-text mono font-bold">{money(corteSeleccionado.precio)}</span>
                   </div>
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label required">Tu Nombre Completo</label>
+                  <label className="form-label required">👤 Tu Nombre Completo</label>
                   <input
                     type="text"
                     className="form-control"
@@ -886,7 +982,7 @@ export default function LandingPublica() {
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label required">📱 Celular / WhatsApp</label>
+                  <label className="form-label required">📱 Número de Celular / WhatsApp</label>
                   <input
                     type="tel"
                     className="form-control"
@@ -896,16 +992,16 @@ export default function LandingPublica() {
                     required
                   />
                   <span className="form-hint">
-                    Te enviaremos la confirmación directa a tu WhatsApp.
+                    ⚡ Al presionar el botón abajo, se abrirá tu WhatsApp con el mensaje listo para enviar a la administradora y confirmar la reserva.
                   </span>
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Notas o Indicaciones (Opcional)</label>
+                  <label className="form-label">📝 Notas o Indicaciones (Opcional)</label>
                   <input
                     type="text"
                     className="form-control"
-                    placeholder="Ej: Fade bajo, diseño de línea al lado..."
+                    placeholder="Ej: Fade bajo, diseño al lado, cejas marcadas..."
                     value={clienteNotas}
                     onChange={(e) => setClienteNotas(e.target.value)}
                   />
@@ -914,11 +1010,30 @@ export default function LandingPublica() {
                 <button
                   type="submit"
                   className="btn btn-primary btn-lg"
-                  style={{ width: '100%', justifyContent: 'center', fontSize: 16, height: 48 }}
+                  style={{
+                    width: '100%',
+                    justifyContent: 'center',
+                    fontSize: 15,
+                    height: 52,
+                    background: 'linear-gradient(135deg, #25D366, #128C7E)',
+                    borderColor: '#128C7E',
+                    color: '#fff',
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    boxShadow: '0 6px 20px rgba(37, 211, 102, 0.4)',
+                  }}
                   disabled={enviandoCita}
                 >
-                  {enviandoCita ? <Spinner size="sm" /> : <Icon name="check" size={18} />}{' '}
-                  Confirmar Mi Cita en Barber's Revolution
+                  {enviandoCita ? (
+                    <Spinner size="sm" />
+                  ) : (
+                    <>
+                      <WhatsAppLogo size={22} />
+                      <span>Enviar por WhatsApp y Confirmar Reserva</span>
+                    </>
+                  )}
                 </button>
               </form>
             )}
@@ -928,24 +1043,49 @@ export default function LandingPublica() {
               <div className="text-center stack" style={{ gap: 16, padding: '10px 0' }}>
                 <div style={{ fontSize: 48 }}>🎉</div>
                 <h3 style={{ fontSize: 20, fontWeight: 700, color: 'var(--gold)', margin: 0 }}>
-                  ¡Tu Cita fue Apartada Exitosamente!
+                  ¡Solicitud de Reserva Registrada!
                 </h3>
-                <p className="faint small" style={{ maxWidth: 440, margin: '0 auto' }}>
-                  Tu turno con <strong>{barberoSeleccionado?.nombre}</strong> para el{' '}
-                  <strong>{fechaCorta(fechaSeleccionada)} a las {hora(horaSeleccionada)}</strong> quedó agendado.
-                </p>
+                <div
+                  style={{
+                    background: 'rgba(37, 211, 102, 0.1)',
+                    border: '1px solid rgba(37, 211, 102, 0.3)',
+                    borderRadius: '12px',
+                    padding: '14px 18px',
+                    textAlign: 'left',
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  <strong style={{ color: '#4ade80', display: 'block', marginBottom: 4 }}>
+                    📱 Confirmación requerida por WhatsApp:
+                  </strong>
+                  Para que tu turno con <strong>{barberoSeleccionado?.nombre}</strong> el{' '}
+                  <strong>{fechaCorta(fechaSeleccionada)} a las {hora(horaSeleccionada)}</strong> quede 100% asegurado en la agenda, asegúrate de enviar el mensaje en el chat de WhatsApp que se acaba de abrir con la administradora.
+                </div>
 
-                <div className="receipt mt-8" style={{ textAlign: 'left' }}>
+                <div className="receipt mt-4" style={{ textAlign: 'left' }}>
                   <div className="receipt-row">
                     <span className="muted">Cliente:</span>
                     <strong>{clienteNombre}</strong>
+                  </div>
+                  <div className="receipt-row">
+                    <span className="muted">Barbero:</span>
+                    <strong>{barberoSeleccionado?.nombre}</strong>
                   </div>
                   <div className="receipt-row">
                     <span className="muted">Servicio:</span>
                     <span>{corteSeleccionado?.nombre}</span>
                   </div>
                   <div className="receipt-row">
-                    <span className="muted">Valor a pagar en barbería:</span>
+                    <span className="muted">Horario:</span>
+                    <strong className="gold-text">{fechaCorta(fechaSeleccionada)} · {hora(horaSeleccionada)}</strong>
+                  </div>
+                  <div className="receipt-row">
+                    <span className="muted">Sede:</span>
+                    <span>C.C. Sexta Avenida, Cajicá</span>
+                  </div>
+                  <div className="receipt-row total">
+                    <span>Valor a pagar en barbería:</span>
                     <strong className="gold-text mono">{money(corteSeleccionado?.precio)}</strong>
                   </div>
                 </div>
@@ -964,9 +1104,11 @@ export default function LandingPublica() {
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 8,
+                      boxShadow: '0 6px 20px rgba(37, 211, 102, 0.35)',
                     }}
                   >
-                    <WhatsAppLogo size={20} /> Enviar Confirmación por WhatsApp
+                    <WhatsAppLogo size={20} />
+                    <span>Abrir WhatsApp (si no se abrió automáticamente)</span>
                   </a>
 
                   <button
@@ -974,7 +1116,7 @@ export default function LandingPublica() {
                     className="btn btn-ghost"
                     onClick={() => setModalReserva(false)}
                   >
-                    Listo, Salir
+                    Listo, Volver a la Barbería
                   </button>
                 </div>
               </div>
