@@ -149,27 +149,30 @@ export default function Layout() {
         subtitle="Comparte este enlace por WhatsApp o redes sociales para que tus clientes agenden su cita."
       >
         <div className="col" style={{ gap: 18 }}>
-          {/* Enlace general del local */}
+          {/* Enlace general de la página oficial */}
           <div className="field">
-            <label className="label">Enlace General del Negocio</label>
+            <label className="label">Enlace Oficial de Barber's Revolution (Página Principal)</label>
             <div className="row" style={{ gap: 8 }}>
               <input
                 className="input input-sm mono"
                 readOnly
-                value={`${window.location.origin}/reservar`}
+                value={window.location.origin}
                 onClick={(e) => e.target.select()}
               />
               <button
                 type="button"
                 className="btn btn-sm btn-primary"
                 onClick={() => {
-                  navigator.clipboard.writeText(`${window.location.origin}/reservar`)
-                  toast.success('¡Enlace general copiado al portapapeles!')
+                  navigator.clipboard.writeText(window.location.origin)
+                  toast.success('¡Enlace oficial copiado al portapapeles!')
                 }}
               >
                 Copiar
               </button>
             </div>
+            <p className="faint small mt-4">
+              Este es el enlace que se coloca en el perfil de Instagram, TikTok o se envía a los clientes por WhatsApp.
+            </p>
           </div>
 
           {/* Enlace personal si es empleado */}
@@ -180,14 +183,14 @@ export default function Layout() {
                 <input
                   className="input input-sm mono"
                   readOnly
-                  value={`${window.location.origin}/reservar?barbero=${profile.id}`}
+                  value={`${window.location.origin}/?barbero=${profile.id}`}
                   onClick={(e) => e.target.select()}
                 />
                 <button
                   type="button"
                   className="btn btn-sm btn-primary"
                   onClick={() => {
-                    navigator.clipboard.writeText(`${window.location.origin}/reservar?barbero=${profile.id}`)
+                    navigator.clipboard.writeText(`${window.location.origin}/?barbero=${profile.id}`)
                     toast.success('¡Tu enlace personal fue copiado!')
                   }}
                 >
@@ -195,7 +198,7 @@ export default function Layout() {
                 </button>
               </div>
               <p className="faint small mt-4">
-                Tus clientes entrarán con tu perfil ya seleccionado automáticamente.
+                Tus clientes entrarán a la página con tu perfil sugerido.
               </p>
             </div>
           )}
@@ -204,24 +207,24 @@ export default function Layout() {
           <div className="row wrap mt-8" style={{ gap: 10 }}>
             <a
               href={`https://wa.me/?text=${encodeURIComponent(
-                `¡Hola! 👋 Puedes agendar tu cita en ${profile?.barberia?.nombre || 'nuestro local'} directamente aquí: ${
+                `¡Hola! 👋 Te invitamos a conocer los estilos y agendar tu cita en *${profile?.barberia?.nombre || "Barber's Revolution"}* directamente en nuestra página web: ${
                   window.location.origin
-                }/reservar${!isAdmin && profile?.id ? `?barbero=${profile.id}` : ''}`
+                }`
               )}`}
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-success grow"
             >
-              <Icon name="smartphone" /> Enviar por WhatsApp
+              <Icon name="smartphone" /> Compartir por WhatsApp
             </a>
 
             <a
-              href={`${window.location.origin}/reservar${!isAdmin && profile?.id ? `?barbero=${profile.id}` : ''}`}
+              href={window.location.origin}
               target="_blank"
               rel="noopener noreferrer"
-              className="btn btn-ghost"
+              className="btn btn-outline"
             >
-              Ver página <Icon name="chevronRight" />
+              Ver Página Oficial ↗
             </a>
           </div>
         </div>

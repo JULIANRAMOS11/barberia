@@ -47,9 +47,9 @@ export default function App() {
               <Route path="/" element={<LandingPublica />} />
               <Route path="/inicio" element={<Navigate to="/" replace />} />
 
-              {/* Ruta pública de auto-agendamiento para clientes (WhatsApp) */}
-              <Route path="/reservar" element={<ReservaPublica />} />
-              <Route path="/agendar" element={<Navigate to="/reservar" replace />} />
+              {/* Redirecciones automáticas a la Página Oficial */}
+              <Route path="/reservar" element={<Navigate to="/" replace />} />
+              <Route path="/agendar" element={<Navigate to="/" replace />} />
 
               <Route path="/login" element={<LoginRoute />} />
               <Route element={<Guard><Layout /></Guard>}>

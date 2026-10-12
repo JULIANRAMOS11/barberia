@@ -518,6 +518,39 @@ export default function Configuracion() {
                   </div>
                 </div>
 
+                {/* Estado de la Licencia del Software */}
+                <div
+                  style={{
+                    padding: 18,
+                    borderRadius: 'var(--radius)',
+                    background: 'rgba(197, 160, 89, 0.06)',
+                    border: '1px solid rgba(197, 160, 89, 0.25)',
+                  }}
+                >
+                  <div className="row-between wrap mb-8">
+                    <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                      <span style={{ fontSize: 18 }}>🔐</span>
+                      <strong style={{ fontSize: 15, color: 'var(--gold)' }}>
+                        Licencia de Software & Soporte
+                      </strong>
+                    </div>
+                    <span className="badge badge-gold no-dot" style={{ fontSize: 11, fontWeight: 700 }}>
+                      🟢 Plan Anual Activo
+                    </span>
+                  </div>
+                  <div className="stack faint small" style={{ gap: 6, lineHeight: 1.5 }}>
+                    <div>
+                      <strong>Negocio Licenciado:</strong> {profile?.barberia?.nombre || "Barber's Revolution"} · Sede Cajicá
+                    </div>
+                    <div>
+                      <strong>Modalidad de Servicio:</strong> Licencia de Uso Anual (Vigencia: 1 Año · Renovación Octubre 2027)
+                    </div>
+                    <div>
+                      <strong>Incluye:</strong> Base de datos en la nube 24/7, Catálogo de Reservas Web Oficial, Arqueo de Caja en Tiempo Real y Copias de Seguridad Automáticas.
+                    </div>
+                  </div>
+                </div>
+
                 <button
                   type="submit"
                   className="btn btn-primary btn-lg"
