@@ -102,6 +102,11 @@ export default function Dashboard() {
         <section className="card commission-summary">
           <div className="card-header"><h2 className="card-title">Comisiones del equipo</h2><Link to="/reportes" className="btn btn-ghost btn-icon btn-sm" aria-label="Ver liquidación del equipo"><Icon name="chevronRight" /></Link></div><p className="faint small mb-8">Acumuladas en los cobros de hoy</p>
           {m.equipoComisiones.length === 0 ? <Empty icon="percent" title="Aún no hay comisiones hoy">Aparecen al registrar un pago.</Empty> : <div className="list">{m.equipoComisiones.slice(0, 4).map((e) => <div className="list-item" key={e.id}><Avatar nombre={e.nombre} area={e.area} /><div className="grow"><strong>{e.nombre}</strong><p className="faint small">{e.cantidad} servicios cobrados</p></div><strong className="mono commission-value">{money(e.comision)}</strong></div>)}</div>}
+          <div className="mt-12 pt-8" style={{ borderTop: '1px solid var(--border)' }}>
+            <Link to="/reportes?corte=sabado" className="btn btn-outline btn-sm" style={{ width: '100%', borderColor: 'var(--gold)', color: 'var(--gold)', justifyContent: 'center' }}>
+              <Icon name="calendar" size={14} /> ⭐ Corte Semanal para Pagos del Sábado
+            </Link>
+          </div>
         </section>
         <section className="card upcoming-summary">
           <div className="card-header"><h2 className="card-title">Próximas citas</h2><Link to="/agenda" className="btn btn-ghost btn-icon btn-sm" aria-label="Ver próximas citas en agenda"><Icon name="chevronRight" /></Link></div><p className="faint small mb-8">Pendientes y en atención · hoy</p>

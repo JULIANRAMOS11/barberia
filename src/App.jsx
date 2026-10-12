@@ -14,6 +14,7 @@ import Configuracion from './pages/Configuracion'
 import MiAgenda from './pages/MiAgenda'
 import MisFinanzas from './pages/MisFinanzas'
 import ReservaPublica from './pages/ReservaPublica'
+import LandingPublica from './pages/LandingPublica'
 
 const homeFor = (profile) => (profile?.rol === 'admin' ? '/dashboard' : '/mi-agenda')
 
@@ -35,11 +36,6 @@ function LoginRoute() {
   return <Login />
 }
 
-function Home() {
-  const { profile } = useAuth()
-  return <Navigate to={homeFor(profile)} replace />
-}
-
 export default function App() {
   return (
     <ToastProvider>
@@ -47,13 +43,16 @@ export default function App() {
         <BrowserRouter>
           <ErrorBoundary>
             <Routes>
+              {/* Página Principal Oficial / Instagram Bio */}
+              <Route path="/" element={<LandingPublica />} />
+              <Route path="/inicio" element={<Navigate to="/" replace />} />
+
               {/* Ruta pública de auto-agendamiento para clientes (WhatsApp) */}
               <Route path="/reservar" element={<ReservaPublica />} />
               <Route path="/agendar" element={<Navigate to="/reservar" replace />} />
 
               <Route path="/login" element={<LoginRoute />} />
               <Route element={<Guard><Layout /></Guard>}>
-                <Route index element={<Home />} />
                 {/* Admin */}
                 <Route path="/dashboard" element={<Guard role="admin"><Dashboard /></Guard>} />
                 <Route path="/agenda" element={<Guard role="admin"><AgendaMaestra /></Guard>} />

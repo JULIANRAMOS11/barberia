@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import Icon from '../components/Icon'
 import { Avatar, Empty, Skeleton, Spinner, StatCard } from '../components/ui'
 import { useToast } from '../context/ToastContext'
@@ -8,7 +9,8 @@ import { addDays, fechaHora, money, startOfMonth, startOfWeek, toDateInput } fro
 
 export default function Reportes() {
   const toast = useToast()
-  const [periodo, setPeriodo] = useState('hoy') // hoy | semana | mes | personalizado
+  const [searchParams] = useSearchParams()
+  const [periodo, setPeriodo] = useState(() => (searchParams.get('corte') === 'sabado' ? 'sabado' : 'hoy')) // hoy | sabado | semana | mes | personalizado
   const [desde, setDesde] = useState(() => toDateInput(new Date()))
   const [hasta, setHasta] = useState(() => toDateInput(new Date()))
   const [empleadoFiltro, setEmpleadoFiltro] = useState('')
@@ -29,6 +31,12 @@ export default function Reportes() {
     if (periodo === 'hoy') {
       setDesde(toDateInput(hoy))
       setHasta(toDateInput(hoy))
+    } else if (periodo === 'sabado') {
+      // Corte semanal de lunes a sábado para pagar al equipo
+      const lunes = startOfWeek(hoy)
+      const sabado = addDays(lunes, 5)
+      setDesde(toDateInput(lunes))
+      setHasta(toDateInput(sabado))
     } else if (periodo === 'semana') {
       setDesde(toDateInput(startOfWeek(hoy)))
       setHasta(toDateInput(hoy))
@@ -208,6 +216,14 @@ export default function Reportes() {
               Hoy
             </button>
             <button
+              className={periodo === 'sabado' ? 'active' : ''}
+              onClick={() => setPeriodo('sabado')}
+              id="rep-tab-sabado"
+              style={{ fontWeight: 600, color: periodo === 'sabado' ? 'var(--gold)' : undefined }}
+            >
+              ⭐ Corte Sábados (Semanal)
+            </button>
+            <button
               className={periodo === 'semana' ? 'active' : ''}
               onClick={() => setPeriodo('semana')}
               id="rep-tab-semana"
@@ -287,6 +303,45 @@ export default function Reportes() {
           </div>
         </div>
       </div>
+
+      {/* Banner Informativo de Corte de Sábados */}
+      {periodo === 'sabado' && (
+        <div
+          className="card mb-24"
+          style={{
+            background: 'linear-gradient(135deg, rgba(202, 138, 4, 0.12), rgba(234, 179, 8, 0.04))',
+            borderColor: 'var(--gold)',
+            padding: '16px 20px',
+          }}
+        >
+          <div className="row" style={{ gap: 14, alignItems: 'center' }}>
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: '50%',
+                background: 'var(--gold-soft)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--gold)',
+                fontSize: 22,
+                flexShrink: 0,
+              }}
+            >
+              💈
+            </div>
+            <div className="grow">
+              <strong style={{ fontSize: 16, color: 'var(--gold)' }}>
+                Corte Semanal de Sábados para Pago a Barberos y Estilistas
+              </strong>
+              <p className="faint small" style={{ margin: '4px 0 0' }}>
+                Este reporte agrupa toda la semana activa (lunes a sábado). Puedes ver en tiempo real exactamente cuánto pagarle a cada profesional por sus servicios prestados y cuál es la ganancia neta para la barbería.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tarjetas de Métricas de Cierre */}
       <div className="grid grid-4 stagger mb-24">
