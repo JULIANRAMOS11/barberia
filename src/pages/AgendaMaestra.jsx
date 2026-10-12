@@ -57,6 +57,7 @@ export default function AgendaMaestra() {
   const [vistaElegida, setVistaElegida] = useState(null)
   const [empleadoFiltro, setEmpleadoFiltro] = useState('')
   const [modalWalkIn, setModalWalkIn] = useState(false)
+  const [cajonCitasAbierto, setCajonCitasAbierto] = useState(false)
   const [walkInForm, setWalkInForm] = useState({
     cliente: 'Cliente de Paso',
     cliente_telefono: '',
@@ -168,6 +169,19 @@ export default function AgendaMaestra() {
           </p>
         </div>
         <div className="row wrap" style={{ gap: 10 }}>
+          <button
+            className="btn btn-outline"
+            style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}
+            onClick={() => setCajonCitasAbierto(true)}
+            id="agenda-btn-cajoncito"
+          >
+            <Icon name="calendar" /> 📋 Cajoncito Citas ({resumen.total})
+            {resumen.porCobrar > 0 && (
+              <span className="badge badge-gold" style={{ marginLeft: 6, fontSize: 10, padding: '1px 6px' }}>
+                {resumen.porCobrar} por cobrar
+              </span>
+            )}
+          </button>
           <button
             className="btn btn-outline"
             style={{ borderColor: 'var(--amber)', color: 'var(--amber)' }}
@@ -575,6 +589,158 @@ export default function AgendaMaestra() {
           </div>
         </div>
       </Modal>
+
+      {/* Cajoncito Deslizable de Citas de Hoy */}
+      {cajonCitasAbierto && (
+        <div className="drawer-overlay" onClick={() => setCajonCitasAbierto(false)}>
+          <div className="drawer-content animate-in" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-header">
+              <div>
+                <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontSize: 22 }}>📋</span>
+                  <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Cajoncito de Citas de Hoy</h2>
+                </div>
+                <p className="faint small" style={{ margin: '4px 0 0' }}>
+                  {resumen.total} cita{resumen.total === 1 ? '' : 's'} programadas para {fechaLarga(day)}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon btn-sm"
+                onClick={() => setCajonCitasAbierto(false)}
+                aria-label="Cerrar cajoncito"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Métricas rápidas dentro del cajoncito */}
+            <div className="grid grid-3 mb-16" style={{ gap: 8, padding: '0 16px' }}>
+              <div style={{ background: 'var(--surface-hover)', padding: '8px 12px', borderRadius: 8, textAlign: 'center' }}>
+                <span className="faint small" style={{ fontSize: 11 }}>Total Citas</span>
+                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>{resumen.total}</div>
+              </div>
+              <div style={{ background: 'rgba(234, 179, 8, 0.1)', padding: '8px 12px', borderRadius: 8, textAlign: 'center' }}>
+                <span className="faint small" style={{ fontSize: 11 }}>Por Cobrar</span>
+                <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--gold)' }}>{resumen.porCobrar}</div>
+              </div>
+              <div style={{ background: 'rgba(34, 197, 94, 0.1)', padding: '8px 12px', borderRadius: 8, textAlign: 'center' }}>
+                <span className="faint small" style={{ fontSize: 11 }}>Proyectado</span>
+                <div className="mono font-bold" style={{ fontSize: 13, color: 'var(--green)' }}>{money(resumen.proyectado)}</div>
+              </div>
+            </div>
+
+            {/* Listado de Citas de Hoy */}
+            <div className="drawer-body" style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto', padding: '0 16px' }}>
+              {citasVisibles.length === 0 ? (
+                <Empty icon="calendar" title="No hay citas en esta fecha">
+                  No hay citas agendadas para este día en el área seleccionada.
+                </Empty>
+              ) : (
+                <div className="stack" style={{ gap: 10 }}>
+                  {citasVisibles.map((c) => (
+                    <div
+                      key={c.id}
+                      className="cajon-cita-card"
+                      style={{
+                        background: 'var(--surface-hover)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius)',
+                        padding: 12,
+                      }}
+                    >
+                      <div className="row-between mb-6" style={{ alignItems: 'flex-start' }}>
+                        <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+                          <span className="mono font-bold gold-text" style={{ fontSize: 15 }}>
+                            {hora(c.fecha_hora)}
+                          </span>
+                          <EstadoBadge estado={c.estado} />
+                        </div>
+                        <span className="mono gold-text font-bold">{money(c.precio)}</span>
+                      </div>
+
+                      <div className="row" style={{ gap: 10, alignItems: 'center', marginBottom: 8 }}>
+                        <Avatar nombre={c.empleado?.nombre} area={c.empleado?.area} size="sm" />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14 }}>{c.cliente}</div>
+                          <div className="faint small">
+                            {c.servicio?.nombre} · con {c.empleado?.nombre}
+                          </div>
+                        </div>
+                      </div>
+
+                      {c.cliente_telefono && (
+                        <div className="row-between mb-8 faint small" style={{ alignItems: 'center' }}>
+                          <span>📱 {c.cliente_telefono}</span>
+                          <a
+                            href={`https://wa.me/57${c.cliente_telefono.replace(/\D/g, '')}?text=${encodeURIComponent(
+                              `Hola ${c.cliente}, te escribimos de Barber's Revolution para confirmar tu cita hoy a las ${hora(c.fecha_hora)}.`
+                            )}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="btn btn-outline btn-xs"
+                            style={{ borderColor: 'var(--green)', color: 'var(--green)', padding: '2px 8px' }}
+                          >
+                            <Icon name="smartphone" size={12} /> WhatsApp
+                          </a>
+                        </div>
+                      )}
+
+                      {/* Botones de acción rápida en el cajón */}
+                      <div className="row wrap" style={{ gap: 6, marginTop: 6, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                        {c.estado === 'pendiente' && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline grow"
+                            disabled={busy}
+                            onClick={() => cambiarEstado(c, 'en_proceso')}
+                          >
+                            <Icon name="play" size={14} /> Iniciar
+                          </button>
+                        )}
+                        {c.estado === 'en_proceso' && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline grow"
+                            disabled={busy}
+                            onClick={() => cambiarEstado(c, 'completada')}
+                            style={{ borderColor: 'var(--green)', color: 'var(--green)' }}
+                          >
+                            <Icon name="check" size={14} /> Completar
+                          </button>
+                        )}
+                        {c.estado === 'completada' && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-primary grow"
+                            onClick={() => {
+                              setCajonCitasAbierto(false)
+                              navigate(`/caja?cita=${c.id}`)
+                            }}
+                          >
+                            <Icon name="cash" size={14} /> Cobrar en Caja
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="drawer-footer" style={{ padding: 16, borderTop: '1px solid var(--border)', marginTop: 12 }}>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ width: '100%', justifyContent: 'center' }}
+                onClick={() => setCajonCitasAbierto(false)}
+              >
+                Cerrar Cajoncito
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

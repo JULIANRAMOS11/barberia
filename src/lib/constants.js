@@ -68,10 +68,17 @@ export const DIAS_SEMANA = [
   { id: 0, label: 'Domingo' },
 ]
 
+export const NEGOCIO_INFO = {
+  nombre: "Barber's Revolution",
+  slogan: 'Revoluciona tu estilo · Barbería Profesional & Cuidado Masculino',
+  direccion: 'Calle 5 # 6-18 Centro Comercial Sexta Avenida, Cajicá, Colombia',
+  ciudad: 'Cajicá, Colombia',
+}
+
 export const REDES_SOCIALES = {
-  instagram: 'https://instagram.com/elitebarberstudio',
-  tiktok: 'https://tiktok.com/@elitebarberstudio',
-  facebook: 'https://facebook.com/elitebarberstudio',
+  instagram: 'https://www.instagram.com/barbersrevolution/',
+  tiktok: 'https://www.tiktok.com/@barbers.revolution',
+  facebook: 'https://web.facebook.com/BarbersRevolution/?locale=es_LA&_rdc=1&_rdr#',
   whatsapp: 'https://wa.me/573124614214',
   telefono: '+57 312 461 4214',
 }

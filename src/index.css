@@ -1530,4 +1530,364 @@ input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(0.8); cur
   }
 }
 
+/* ============================================================ */
+/* ESTILOS BARBER REVOLUTION (Basado en la foto oficial)        */
+/* ============================================================ */
+.landing-revolution-root {
+  min-height: 100vh;
+  background: radial-gradient(circle at 10% 20%, rgba(202, 138, 4, 0.08), transparent 40%),
+              radial-gradient(circle at 90% 80%, rgba(202, 138, 4, 0.06), transparent 40%),
+              #101316;
+  color: #f1f5f9;
+  font-family: inherit;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Barra social flotante a la izquierda */
+.revolution-social-floating {
+  position: fixed;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.revolution-social-floating .social-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), filter 0.2s;
+}
+.revolution-social-floating .social-btn:hover {
+  transform: scale(1.12) translateX(4px);
+  filter: brightness(1.15);
+}
+.revolution-social-floating .social-btn.facebook {
+  background: #1877f2;
+}
+.revolution-social-floating .social-btn.whatsapp {
+  background: #25d366;
+}
+.revolution-social-floating .social-btn.instagram {
+  background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285aeb 90%);
+}
+.revolution-social-floating .social-btn.tiktok {
+  background: #000;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Header Barber Revolution */
+.revolution-header {
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  background: rgba(16, 19, 22, 0.94);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  height: 72px;
+}
+.revolution-header-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.revolution-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: inherit;
+}
+.brand-scissors-icon {
+  font-size: 24px;
+  color: var(--gold);
+}
+.brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+.brand-script {
+  font-family: Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--gold);
+  letter-spacing: 1px;
+}
+.brand-revolution {
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #fff;
+}
+.revolution-nav {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+}
+.revolution-nav .nav-link {
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+  transition: color 0.15s;
+}
+.revolution-nav .nav-link:hover,
+.revolution-nav .nav-link.active {
+  color: var(--gold);
+}
+.revolution-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.login-link {
+  color: #94a3b8;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.login-link:hover {
+  color: #fff;
+}
+.btn-admin-pill {
+  background: #c5a059;
+  color: #111417;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 9px 18px;
+  border-radius: 20px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.15s;
+  box-shadow: 0 4px 14px rgba(197, 160, 89, 0.25);
+}
+.btn-admin-pill:hover {
+  background: #d8b46e;
+  transform: translateY(-1px);
+}
+
+/* Barra de Ubicación Cajicá */
+.revolution-location-bar {
+  background: rgba(197, 160, 89, 0.08);
+  border-bottom: 1px solid rgba(197, 160, 89, 0.25);
+  padding: 8px 0;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+/* Cuadrícula de Cortes */
+.revolution-main-content {
+  padding: 40px 20px 60px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.revolution-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-bottom: 50px;
+}
+.revolution-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.revolution-cut-card {
+  background: #171a1d;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s, box-shadow 0.2s;
+}
+.revolution-cut-card:hover {
+  transform: translateY(-5px);
+  border-color: #c5a059;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+}
+.cut-image-wrapper {
+  width: 100%;
+  height: 220px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0f1214;
+}
+.cut-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s var(--ease);
+}
+.revolution-cut-card:hover .cut-image {
+  transform: scale(1.04);
+}
+.cut-info {
+  padding: 14px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cut-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  line-height: 1.3;
+}
+.cut-price {
+  font-size: 18px;
+  font-weight: 800;
+  color: #c5a059;
+  font-family: inherit;
+}
+.cut-btn-reservar {
+  background: #c5a059;
+  color: #111417;
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  width: 100%;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.cut-btn-reservar:hover {
+  background: #d8b46e;
+}
+.cut-btn-reservar:active {
+  transform: scale(0.98);
+}
+
+/* Sección Inferior */
+.revolution-bottom-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 40px;
+}
+.social-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  color: #fff;
+  transition: opacity 0.15s;
+}
+.social-pill-btn.fb { background: #1877f2; }
+.social-pill-btn.wa { background: #25d366; }
+.social-pill-btn.ig { background: #e1306c; }
+.social-pill-btn.tk { background: #222; border: 1px solid #444; }
+.social-pill-btn:hover { opacity: 0.9; }
+
+/* Footer Barber Revolution */
+.revolution-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0b0e10;
+  padding: 50px 0 30px;
+}
+.revolution-footer-grid {
+  display: grid;
+  grid-template-columns: 2fr 1.5fr 1.5fr;
+  gap: 30px;
+  margin-bottom: 30px;
+}
+.revolution-footer-bottom {
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Modal de Reserva: Cuadrícula de Barberos */
+.reserva-modal-staff-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+.reserva-modal-staff-card {
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.reserva-modal-staff-card:hover {
+  border-color: #c5a059;
+  background: rgba(197, 160, 89, 0.08);
+  transform: translateY(-2px);
+}
+
+/* Drawer / Cajoncito Lateral de Agenda */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  justify-content: flex-end;
+  animation: fadeIn 0.2s var(--ease);
+}
+.drawer-content {
+  width: 100%;
+  max-width: 440px;
+  height: 100vh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  animation: slideInRight 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.drawer-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@media (max-width: 980px) {
+  .revolution-grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .revolution-grid-3 { grid-template-columns: repeat(2, 1fr); }
+  .revolution-nav { display: none; }
+  .revolution-footer-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 580px) {
+  .revolution-grid-4 { grid-template-columns: 1fr; }
+  .revolution-grid-3 { grid-template-columns: 1fr; }
+  .revolution-social-floating { display: none; }
+}
+
+
 

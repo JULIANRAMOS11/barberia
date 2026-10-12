@@ -1,469 +1,807 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../components/Icon'
-import { Avatar, Spinner } from '../components/ui'
+import { Avatar, Empty, Modal, Spinner } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/api'
-import { AREAS, REDES_SOCIALES } from '../lib/constants'
-import { duracion, money } from '../lib/format'
+import { NEGOCIO_INFO, REDES_SOCIALES } from '../lib/constants'
+import { addDays, fechaCorta, fechaLarga, hora, money, sameDay, startOfDay } from '../lib/format'
+import { esDiaDescanso, getEmpleadoHorario } from '../lib/horarios'
 
 export default function LandingPublica() {
   const { session, profile } = useAuth()
   const navigate = useNavigate()
   const [catalogo, setCatalogo] = useState({ barberia: null, servicios: [], empleados: [] })
   const [loading, setLoading] = useState(true)
-  const [tabArea, setTabArea] = useState('barberia')
 
+  // Estado del Modal de Reserva Rápida Sincronizada
+  const [modalReserva, setModalReserva] = useState(false)
+  const [corteSeleccionado, setCorteSeleccionado] = useState(null)
+  const [pasoReserva, setPasoReserva] = useState(1) // 1: Barbero, 2: Calendario y Hora, 3: Datos Cliente, 4: Éxito
+  const [barberoSeleccionado, setBarberoSeleccionado] = useState(null)
+  const [fechaSeleccionada, setFechaSeleccionada] = useState(() => startOfDay())
+  const [horaSeleccionada, setHoraSeleccionada] = useState(null)
+  const [clienteNombre, setClienteNombre] = useState('')
+  const [clienteTelefono, setClienteTelefono] = useState('')
+  const [clienteNotas, setClienteNotas] = useState('')
+  const [slotsDisponibles, setSlotsDisponibles] = useState([])
+  const [cargandoSlots, setCargandoSlots] = useState(false)
+  const [enviandoCita, setEnviandoCita] = useState(false)
+  const [citaConfirmada, setCitaConfirmada] = useState(null)
+
+  // Cargar catálogo público
   useEffect(() => {
     api.getPublicCatalog()
       .then((data) => setCatalogo(data))
-      .catch((err) => console.error('Error cargando catálogo:', err))
+      .catch((err) => console.error('Error cargando catálogo público:', err))
       .finally(() => setLoading(false))
   }, [])
 
-  const serviciosBarberia = [
+  // Lista de Cortes de la Cuadrícula Principal (Estilo idéntico a la imagen de Barber Revolution)
+  const cortesPrincipales = [
     {
-      id: 's1',
-      nombre: 'Corte Simple / Fade',
+      id: 'c1',
+      nombre: 'Corte Degradado / Fade',
+      precio: 25000,
+      duracion: 35,
+      imagen: 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&w=600&q=80',
+    },
+    {
+      id: 'c2',
+      nombre: 'Arreglo de Barba',
+      precio: 15000,
+      duracion: 25,
+      imagen: 'https://images.unsplash.com/photo-1621605815971-fbc98d665033?auto=format&fit=crop&w=600&q=80',
+    },
+    {
+      id: 'c3',
+      nombre: 'Corte Clásico',
       precio: 25000,
       duracion: 30,
-      destacado: false,
-      desc: 'Cualquier estilo: degradado bajo, medio o alto, corte clásico con tijera o máquina. Acabado limpio.',
+      imagen: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=600&q=80',
     },
     {
-      id: 's2',
+      id: 'c4',
+      nombre: 'Diseño de Cejas',
+      precio: 10000,
+      duracion: 15,
+      imagen: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=600&q=80',
+    },
+    {
+      id: 'c5',
       nombre: 'Corte + Cejas',
       precio: 30000,
-      duracion: 35,
-      destacado: true,
-      tag: 'POPULAR',
-      desc: 'Corte de cabello profesional + perfilado, limpieza y diseño de cejas con navaja barbera.',
+      duracion: 40,
+      imagen: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=600&q=80',
     },
     {
-      id: 's3',
-      nombre: 'Corte + Barba + Cejas (Completo)',
-      precio: 45000,
-      duracion: 50,
-      destacado: true,
-      tag: 'EL MÁS PEDIDO ⭐',
-      desc: 'La experiencia completa: corte degradado, toalla caliente, vapor ozono, barba perfilada y cejas.',
-    },
-    {
-      id: 's4',
-      nombre: 'Barba y Perfilado',
-      precio: 15000,
-      duracion: 20,
-      destacado: false,
-      desc: 'Afeitado tradicional, hidratación de piel, recorte simétrico y delineado nítido con navaja.',
-    },
-    {
-      id: 's5',
-      nombre: 'Perfilado de Cejas Solas',
-      precio: 5000,
+      id: 'c6',
+      nombre: 'Corte de Cejas',
+      precio: 10000,
       duracion: 15,
-      destacado: false,
-      desc: 'Limpieza, desbaste y diseño simétrico de cejas con navaja descartable nueva.',
+      imagen: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&q=80',
     },
-  ]
-
-  const serviciosWomen = [
     {
-      id: 'w1',
-      nombre: 'Manicure Tradicional',
+      id: 'c7',
+      nombre: 'Diseño de Cejas',
+      precio: 10000,
+      duracion: 15,
+      imagen: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80',
+    },
+    {
+      id: 'c8',
+      nombre: 'Corte de Barba',
+      precio: 15000,
+      duracion: 25,
+      imagen: 'https://images.unsplash.com/photo-1517832606589-7629c3395909?auto=format&fit=crop&w=600&q=80',
+    },
+    {
+      id: 'c9',
+      nombre: 'Corte Clásico',
       precio: 25000,
-      duracion: 45,
-      desc: 'Limpieza profunda de cutículas, limado anatómico, exfoliación e hidratación con esmalte tradicional.',
+      duracion: 30,
+      imagen: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=600&q=80',
     },
     {
-      id: 'w2',
-      nombre: 'Pedicure Spa',
-      precio: 35000,
-      duracion: 60,
-      desc: 'Spa exfoliante, eliminación de asperezas, masaje relajante y esmaltado profesional.',
+      id: 'c10',
+      nombre: 'Diseño de Cejas',
+      precio: 10000,
+      duracion: 15,
+      imagen: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=600&q=80',
     },
     {
-      id: 'w3',
-      nombre: 'Esmaltado Semipermanente',
-      precio: 45000,
-      duracion: 60,
-      destacado: true,
-      tag: 'DURACIÓN 21 DÍAS',
-      desc: 'Gel de alta fijación con secado en lámpara LED/UV. Brillo espejo y durabilidad extrema.',
+      id: 'c11',
+      nombre: 'Corte Clásico',
+      precio: 25000,
+      duracion: 30,
+      imagen: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=600&q=80',
     },
     {
-      id: 'w4',
-      nombre: 'Uñas Acrílicas (Set Completo)',
-      precio: 85000,
-      duracion: 120,
-      destacado: true,
-      tag: 'TENDENCIA 💅',
-      desc: 'Esculpidas o con tips, estructura almendra, coffin o cuadradas con decoración y encapsulado.',
-    },
-    {
-      id: 'w5',
-      nombre: 'Cepillado y Peinado',
-      precio: 35000,
-      duracion: 45,
-      desc: 'Lavado revitalizante, secado profesional con cepillo iónico y ondas o alisado sedoso.',
+      id: 'c12',
+      nombre: 'Diseño de Cejas',
+      precio: 10000,
+      duracion: 15,
+      imagen: 'https://images.unsplash.com/photo-1582095133179-bfd08e2fc6b3?auto=format&fit=crop&w=600&q=80',
     },
   ]
 
-  const barberosStaff = [
+  // Cortes inferiores de cejas ("Síguenos en nuestras redes")
+  const cortesCejasInferiores = [
     {
-      nombre: 'Carlos (Barbero 01)',
-      area: 'barberia',
-      apodo: 'Master Fade & Diseños',
-      desc: 'Especialista en degradados milimétricos (skin fade), taper fade y líneas freestyle.',
+      id: 'cj1',
+      nombre: 'Diseño de Cejas',
+      precio: 15000,
+      imagen: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&w=600&q=80',
     },
     {
-      nombre: 'Andrés (Barbero 02)',
-      area: 'barberia',
-      apodo: 'Barba Tradicional',
-      desc: 'Maestro del afeitado clásico con toalla caliente, perfilado y pomadas de fijación.',
+      id: 'cj2',
+      nombre: 'Diseño de Cejas',
+      precio: 15000,
+      imagen: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&q=80',
     },
     {
-      nombre: 'Julián (Barbero 03)',
-      area: 'barberia',
-      apodo: 'Tijera & Estilo Clásico',
-      desc: 'Experto en texturizado con tijera, cortes ejecutivos y asesoría de visagismo.',
-    },
-    {
-      nombre: 'Valentina (Estilista 01)',
-      area: 'women',
-      apodo: 'Nail Artist & Acrílicas',
-      desc: 'Técnica certificada en acrílicos, semipermanente, encapsulados y efectos espejo.',
-    },
-    {
-      nombre: 'Camila (Estilista 02)',
-      area: 'women',
-      apodo: 'Spa & Cepillado',
-      desc: 'Especialista en cuidado capilar, peinados para eventos y spa de pies.',
+      id: 'cj3',
+      nombre: 'Diseño de Cejas',
+      precio: 10000,
+      imagen: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80',
     },
   ]
 
-  const galeriaCortes = [
-    { titulo: 'Mid Fade + Textura', desc: 'Acabado mate con cera Reuzel', emoji: '✂️' },
-    { titulo: 'Low Taper Fade + Barba', desc: 'Líneas nítidas con navaja dorada', emoji: '👑' },
-    { titulo: 'Buzz Cut + Diseño Cejas', desc: 'Corte militar degradado al cero', emoji: '💈' },
-    { titulo: 'Uñas Acrílicas Coffin', desc: 'Esmaltado semipermanente Masglo', emoji: '💅' },
-    { titulo: 'Perfilado de Barba Estilo Leñador', desc: 'Toalla caliente y aceite hidratante', emoji: '🪒' },
-    { titulo: 'Cepillado Iónico con Ondas', desc: 'Brillo y volumen sin frizz', emoji: '✨' },
-  ]
+  // Próximos 7 días hábiles para el calendario de reserva
+  const diasDisponibles = useMemo(() => {
+    const hoy = startOfDay()
+    return Array.from({ length: 7 }, (_, i) => addDays(hoy, i))
+  }, [])
+
+  // Lista de Barberos activos del catálogo
+  const barberosDisponibles = useMemo(() => {
+    return catalogo.empleados.filter((e) => e.activo !== false && e.area === 'barberia')
+  }, [catalogo.empleados])
+
+  // Abrir modal de reserva al hacer clic en "Reservar" en cualquier corte
+  const iniciarReservaCorte = (corte) => {
+    setCorteSeleccionado(corte)
+    setPasoReserva(1)
+    setBarberoSeleccionado(null)
+    setHoraSeleccionada(null)
+    setCitaConfirmada(null)
+    setModalReserva(true)
+  }
+
+  // Cargar turnos disponibles del barbero y fecha seleccionados
+  useEffect(() => {
+    if (!barberoSeleccionado || !fechaSeleccionada || pasoReserva !== 2) return
+
+    setCargandoSlots(true)
+    const durMin = corteSeleccionado?.duracion || 30
+
+    api.getPublicAvailableSlots({
+      empleadoId: barberoSeleccionado.id,
+      fecha: fechaSeleccionada,
+      duracionMinutos: durMin,
+    })
+      .then((slots) => setSlotsDisponibles(slots))
+      .catch((err) => {
+        console.error('Error calculando disponibilidad:', err)
+        setSlotsDisponibles([])
+      })
+      .finally(() => setCargandoSlots(false))
+  }, [barberoSeleccionado, fechaSeleccionada, pasoReserva, corteSeleccionado])
+
+  // Confirmar cita y sincronizar con la base de datos
+  const handleConfirmarCita = async (e) => {
+    e.preventDefault()
+    if (!clienteNombre.trim() || !clienteTelefono.trim()) {
+      alert('Por favor ingresa tu nombre y número de celular.')
+      return
+    }
+    if (!horaSeleccionada) {
+      alert('Por favor selecciona una hora de atención disponible.')
+      return
+    }
+
+    setEnviandoCita(true)
+    try {
+      const servEncontrado = catalogo.servicios.find((s) =>
+        s.nombre.toLowerCase().includes(corteSeleccionado.nombre.toLowerCase()) ||
+        corteSeleccionado.nombre.toLowerCase().includes(s.nombre.toLowerCase())
+      ) || catalogo.servicios[0]
+
+      const cita = await api.createCitaPublica({
+        barberia_id: catalogo.barberia?.id,
+        cliente: clienteNombre.trim(),
+        cliente_telefono: clienteTelefono.trim(),
+        empleado_id: barberoSeleccionado.id,
+        servicio_id: servEncontrado?.id,
+        fecha_hora: horaSeleccionada,
+        notas: clienteNotas.trim() || `Reserva online: ${corteSeleccionado.nombre}`,
+      })
+
+      setCitaConfirmada(cita)
+      setPasoReserva(4) // Pantalla de confirmación exitosa
+    } catch (err) {
+      alert(err.message || 'Error al agendar la cita. Por favor intenta otro horario.')
+    } finally {
+      setEnviandoCita(false)
+    }
+  }
+
+  // Generar link directo a WhatsApp para la dueña
+  const generarWhatsAppConfirmacion = () => {
+    if (!citaConfirmada) return '#'
+    const fechaTxt = fechaLarga(citaConfirmada.fecha_hora)
+    const horaTxt = hora(citaConfirmada.fecha_hora)
+    const msg = encodeURIComponent(
+      `¡Hola Barber's Revolution! 👋 Acabo de agendar una cita por su página web:\n\n` +
+      `👤 Cliente: ${clienteNombre}\n` +
+      `📱 Teléfono: ${clienteTelefono}\n` +
+      `✂️ Corte: ${corteSeleccionado?.nombre}\n` +
+      `💈 Barbero: ${barberoSeleccionado?.nombre}\n` +
+      `📅 Fecha: ${fechaTxt}\n` +
+      `⏰ Hora: ${horaTxt}\n` +
+      `💰 Precio: ${money(corteSeleccionado?.precio)}\n\n` +
+      `¿Podrían confirmarme la cita por favor? ¡Muchas gracias!`
+    )
+    return `${REDES_SOCIALES.whatsapp}?text=${msg}`
+  }
 
   return (
-    <div className="landing-wrap animate-in">
-      {/* Barra de Sesión Activa (Si la Dueña ya tiene sesión iniciada) */}
-      {session && profile?.rol === 'admin' && (
-        <div className="landing-admin-banner">
-          <div className="landing-container row-between">
-            <span className="small">
-              👑 Sesión activa como <strong>{profile.nombre} (Dueña / Administradora)</strong>
-            </span>
-            <Link to="/dashboard" className="btn btn-primary btn-sm">
-              <Icon name="dashboard" size={14} /> Ir a mi Panel Administrativo
-            </Link>
-          </div>
-        </div>
-      )}
+    <div className="landing-revolution-root">
+      {/* ========================================================= */}
+      {/* BARRA FLOTANTE DE REDES SOCIALES (Costado Izquierdo Fijo)  */}
+      {/* ========================================================= */}
+      <aside className="revolution-social-floating" aria-label="Redes Sociales">
+        <a
+          href={REDES_SOCIALES.facebook}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="social-btn facebook"
+          title="Síguenos en Facebook"
+        >
+          <Icon name="facebook" size={22} />
+        </a>
+        <a
+          href={REDES_SOCIALES.whatsapp}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="social-btn whatsapp"
+          title="Escríbenos a WhatsApp"
+        >
+          <Icon name="smartphone" size={22} />
+        </a>
+        <a
+          href={REDES_SOCIALES.instagram}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="social-btn instagram"
+          title="Síguenos en Instagram (@barbersrevolution)"
+        >
+          <Icon name="instagram" size={22} />
+        </a>
+        <a
+          href={REDES_SOCIALES.tiktok}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="social-btn tiktok"
+          title="Síguenos en TikTok (@barbers.revolution)"
+        >
+          <Icon name="video" size={20} />
+        </a>
+      </aside>
 
-      {/* Cabecera / Navegación Superior */}
-      <header className="landing-header">
-        <div className="landing-container row-between">
-          <div className="landing-brand row">
-            <div className="brand-logo" style={{ width: 36, height: 36 }}>
-              <Icon name="scissors" size={18} />
+      {/* ========================================================= */}
+      {/* HEADER / BARRA DE NAVEGACIÓN SUPERIOR                     */}
+      {/* ========================================================= */}
+      <header className="revolution-header">
+        <div className="revolution-header-inner">
+          {/* Logo Barber Revolution */}
+          <Link to="/" className="revolution-brand">
+            <div className="brand-scissors-icon">✂️</div>
+            <div className="brand-text">
+              <span className="brand-script">Barber</span>
+              <span className="brand-revolution">Revolution</span>
             </div>
-            <div>
-              <strong style={{ fontSize: 17, letterSpacing: '0.04em' }}>
-                {catalogo.barberia?.nombre || 'ELITE BARBER STUDIO'}
-              </strong>
-              <div className="faint" style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
-                Barbería & Zona Women
-              </div>
-            </div>
-          </div>
+          </Link>
 
-          <nav className="landing-nav row" style={{ gap: 20 }}>
-            <a href="#servicios" className="landing-nav-link">Servicios & Precios</a>
-            <a href="#equipo" className="landing-nav-link">Nuestros Barberos</a>
-            <a href="#galeria" className="landing-nav-link">Galería</a>
-            <a href="#contacto" className="landing-nav-link">Ubicación</a>
+          {/* Menú Central */}
+          <nav className="revolution-nav">
+            <a href="#inicio" className="nav-link active">Inicio</a>
+            <a href="#servicios" className="nav-link">Servicios</a>
+            <a href="#galeria" className="nav-link">Galería</a>
+            <a href="#contacto" className="nav-link">Contacto</a>
           </nav>
 
-          <div className="row" style={{ gap: 12 }}>
-            <Link to="/reservar" className="btn btn-primary" id="landing-btn-reservar">
-              <Icon name="calendar" size={16} /> Agendar Cita
+          {/* Acceso Administradora */}
+          <div className="revolution-header-actions">
+            <Link to="/login" className="login-link">
+              Login
             </Link>
-
-            {/* Acceso discreto para la Dueña (Estilo clásico discreto como pidió) */}
-            <Link
-              to="/login"
-              className="landing-admin-login-link"
-              title="Acceso Administrativo Exclusivo de la Dueña"
-              id="landing-link-admin-discreto"
-            >
-              <Icon name="lock" size={13} />
-              <span>Acceso Dueña</span>
+            <Link to={session ? "/dashboard" : "/login"} className="btn-admin-pill">
+              <Icon name="user" size={15} />
+              <span>{session ? `Admin (${profile?.nombre?.split(' ')[0] || 'Dueña'})` : 'Área de Administradora'}</span>
             </Link>
           </div>
         </div>
       </header>
 
-      {/* Hero Section */}
-      <section className="landing-hero">
-        <div className="landing-container">
-          <div className="landing-hero-content">
-            <div className="landing-badge">
-              <span>💈 BARBERÍA PROFESIONAL & ZONA DE BELLEZA</span>
-            </div>
-
-            <h1 className="landing-title">
-              El Estilo y la Precisión que <span className="gold-text">Definen tu Presencia</span>
-            </h1>
-
-            <p className="landing-sub">
-              Cortes clásicos, degradados modernos (Fade), diseño de barba con toalla caliente y zona exclusiva de manicure y estética femenina. Agenda tu turno sin filas ni esperas.
-            </p>
-
-            <div className="row wrap landing-hero-actions" style={{ gap: 14 }}>
-              <Link to="/reservar" className="btn btn-primary btn-lg" style={{ fontSize: 16 }}>
-                <Icon name="calendar" /> Agendar Mi Cita en Línea
-              </Link>
-              <a href="#servicios" className="btn btn-outline btn-lg" style={{ fontSize: 16 }}>
-                <Icon name="receipt" /> Ver Precios y Cortes
-              </a>
-            </div>
-
-            {/* Insignias de Confianza */}
-            <div className="landing-trust-grid">
-              <div className="trust-item">
-                <span className="trust-num gold-text">⭐ 4.9/5</span>
-                <span className="trust-label">Valoración en Clientes</span>
-              </div>
-              <div className="trust-item">
-                <span className="trust-num gold-text">+1.000</span>
-                <span className="trust-label">Clientes Atendidos</span>
-              </div>
-              <div className="trust-item">
-                <span className="trust-num gold-text">4 Sedes</span>
-                <span className="trust-label">Red de Barberías</span>
-              </div>
-              <div className="trust-item">
-                <span className="trust-num gold-text">100%</span>
-                <span className="trust-label">Turno Garantizado</span>
-              </div>
-            </div>
+      {/* Banner de Ubicación y Sede Oficial */}
+      <div className="revolution-location-bar">
+        <div className="container row-between wrap" style={{ gap: 8, alignItems: 'center' }}>
+          <div className="row" style={{ gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 16 }}>📍</span>
+            <span>{NEGOCIO_INFO.direccion}</span>
+          </div>
+          <div className="row" style={{ gap: 16 }}>
+            <span>Horario: Lun a Sáb 9:00 AM – 9:00 PM</span>
+            <a href={REDES_SOCIALES.instagram} target="_blank" rel="noreferrer" style={{ color: 'var(--gold)' }}>
+              @barbersrevolution
+            </a>
           </div>
         </div>
-      </section>
+      </div>
 
-      {/* Sección: Tarifas y Servicios */}
-      <section id="servicios" className="landing-section">
-        <div className="landing-container">
-          <div className="text-center mb-32">
-            <span className="eyebrow">TARIFAS Y SERVICIOS</span>
-            <h2 style={{ fontSize: 32, fontWeight: 800 }}>Precios Claros, Sin Letra Chica</h2>
-            <p className="faint mt-8" style={{ maxWidth: 540, margin: '8px auto 0' }}>
-              Tarifas fijas y transparentes para que elijas exactamente lo que necesitas.
-            </p>
-
-            {/* Toggle Área */}
-            <div className="segmented mt-24" style={{ display: 'inline-flex' }}>
-              <button
-                className={tabArea === 'barberia' ? 'active' : ''}
-                onClick={() => setTabArea('barberia')}
-              >
-                <Icon name="scissors" /> Barbería (Caballeros)
-              </button>
-              <button
-                className={tabArea === 'women' ? 'active' : ''}
-                onClick={() => setTabArea('women')}
-              >
-                <Icon name="sparkles" /> Zona Women (Damas)
-              </button>
-            </div>
-          </div>
-
-          <div className="landing-cards-grid">
-            {(tabArea === 'barberia' ? serviciosBarberia : serviciosWomen).map((s) => (
-              <div key={s.id} className={`landing-service-card ${s.destacado ? 'featured' : ''}`}>
-                {s.tag && <div className="card-tag">{s.tag}</div>}
-                <div className="row-between">
-                  <h3 style={{ fontSize: 18, fontWeight: 700 }}>{s.nombre}</h3>
-                  <div className="mono gold-text" style={{ fontSize: 22, fontWeight: 800 }}>
-                    {money(s.precio)}
-                  </div>
-                </div>
-                <p className="faint small mt-8" style={{ minHeight: 44 }}>
-                  {s.desc}
-                </p>
-                <div className="row-between mt-16 pt-12" style={{ borderTop: '1px solid var(--border)' }}>
-                  <span className="faint small row" style={{ gap: 4 }}>
-                    <Icon name="clock" size={14} /> {duracion(s.duracion)}
-                  </span>
-                  <Link
-                    to={`/reservar?servicio=${encodeURIComponent(s.nombre)}`}
-                    className="btn btn-primary btn-sm"
-                  >
-                    Reservar este
-                  </Link>
-                </div>
+      {/* ========================================================= */}
+      {/* CUADRÍCULA PRINCIPAL DE CORTES (IDÉNTICO A LA FOTO)       */}
+      {/* ========================================================= */}
+      <main className="revolution-main-content container" id="servicios">
+        <div className="revolution-grid-4">
+          {cortesPrincipales.map((corte) => (
+            <div key={corte.id} className="revolution-cut-card">
+              <div className="cut-image-wrapper">
+                <img
+                  src={corte.imagen}
+                  alt={corte.nombre}
+                  className="cut-image"
+                  loading="lazy"
+                />
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      {/* Sección: Conoce a Nuestro Equipo */}
-      <section id="equipo" className="landing-section bg-alt">
-        <div className="landing-container">
-          <div className="text-center mb-32">
-            <span className="eyebrow">PROFESIONALES CERTIFICADOS</span>
-            <h2 style={{ fontSize: 32, fontWeight: 800 }}>Conoce a Nuestros Barberos y Estilistas</h2>
-            <p className="faint mt-8" style={{ maxWidth: 540, margin: '8px auto 0' }}>
-              Elige con quién quieres atenderte. Cada profesional cuenta con amplia experiencia y técnica comprobada.
-            </p>
-          </div>
-
-          <div className="landing-team-grid">
-            {barberosStaff.map((staff) => (
-              <div key={staff.nombre} className="landing-team-card">
-                <Avatar nombre={staff.nombre} area={staff.area} size="lg" />
-                <h3 style={{ fontSize: 17, fontWeight: 700, marginTop: 14 }}>{staff.nombre}</h3>
-                <span className={`badge ${staff.area === 'women' ? 'badge-rose' : 'badge-gold'} no-dot mt-6`}>
-                  {staff.apodo}
-                </span>
-                <p className="faint small mt-12 text-center">
-                  {staff.desc}
-                </p>
-                <Link
-                  to={`/reservar?area=${staff.area}`}
-                  className="btn btn-outline btn-sm btn-block mt-16"
+              <div className="cut-info">
+                <h3 className="cut-title">{corte.nombre}</h3>
+                <div className="cut-price">{money(corte.precio)}</div>
+                <button
+                  type="button"
+                  className="cut-btn-reservar"
+                  onClick={() => iniciarReservaCorte(corte)}
                 >
-                  Agendar con {staff.nombre.split(' ')[0]}
-                </Link>
+                  Reservar
+                </button>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
-      </section>
 
-      {/* Sección: Galería / Lookbook */}
-      <section id="galeria" className="landing-section">
-        <div className="landing-container">
-          <div className="text-center mb-32">
-            <span className="eyebrow">FEED DE CORTES & ESTILOS</span>
-            <h2 style={{ fontSize: 32, fontWeight: 800 }}>Nuestros Trabajos Más Recientes</h2>
-            <p className="faint mt-8" style={{ maxWidth: 540, margin: '8px auto 0' }}>
-              Síguenos en Instagram para ver fotos y videos diarios de cortes y transformaciones.
-            </p>
-          </div>
-
-          <div className="landing-gallery-grid">
-            {galeriaCortes.map((g, idx) => (
-              <div key={idx} className="gallery-item-card">
-                <div className="gallery-visual">
-                  <span style={{ fontSize: 40 }}>{g.emoji}</span>
-                </div>
-                <div className="gallery-meta">
-                  <strong style={{ fontSize: 15 }}>{g.titulo}</strong>
-                  <div className="faint small">{g.desc}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="text-center mt-32">
-            <a
-              href={REDES_SOCIALES.instagram}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-outline btn-lg"
-              style={{ gap: 8 }}
-            >
-              <Icon name="instagram" /> Ver Más en Nuestro Instagram Oficial
-            </a>
-          </div>
-        </div>
-      </section>
-
-      {/* Sección: CTA Final para Agendar */}
-      <section className="landing-cta-banner">
-        <div className="landing-container text-center">
-          <h2 style={{ fontSize: 34, fontWeight: 800 }}>
-            ¿Listo para tu Cambio de Look?
-          </h2>
-          <p className="muted mt-12" style={{ maxWidth: 540, margin: '12px auto 0', fontSize: 16 }}>
-            Elige tu horario y barbero favorito en menos de un minuto. La confirmación le llega directo a la administración para apartar tu turno.
-          </p>
-          <div className="mt-24 row" style={{ justifyContent: 'center', gap: 14 }}>
-            <Link to="/reservar" className="btn btn-primary btn-lg" style={{ fontSize: 17, padding: '14px 28px' }}>
-              <Icon name="calendar" size={20} /> Agendar Turno Ahora
-            </Link>
-            <a
-              href={REDES_SOCIALES.whatsapp}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-success btn-lg"
-              style={{ fontSize: 17, padding: '14px 28px' }}
-            >
-              <Icon name="whatsapp" size={20} /> Escribir por WhatsApp
-            </a>
-          </div>
-        </div>
-      </section>
-
-      {/* Footer con Redes Sociales y Ubicación */}
-      <footer id="contacto" className="landing-footer">
-        <div className="landing-container">
-          <div className="landing-footer-grid">
+        {/* ========================================================= */}
+        {/* SECCIÓN INFERIOR: SÍGUENOS EN NUESTRAS REDES              */}
+        {/* ========================================================= */}
+        <section className="revolution-bottom-section" id="galeria">
+          <div className="row-between wrap mb-20" style={{ alignItems: 'flex-end', gap: 16 }}>
             <div>
-              <div className="row mb-12">
-                <div className="brand-logo" style={{ width: 32, height: 32 }}>
-                  <Icon name="scissors" size={16} />
-                </div>
-                <strong style={{ fontSize: 18 }}>{catalogo.barberia?.nombre || 'ELITE BARBER STUDIO'}</strong>
-              </div>
-              <p className="faint small" style={{ maxWidth: 320 }}>
-                El mejor servicio de corte, toalla caliente, barba y spa de uñas. Calidad profesional y atención personalizada.
+              <p className="eyebrow" style={{ color: 'var(--gold)', letterSpacing: 2 }}>DISEÑOS & TENDENCIAS</p>
+              <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Síguenos en nuestras redes</h2>
+              <p className="faint small" style={{ margin: '4px 0 0' }}>
+                Conoce más trabajos en vivo en nuestro Instagram y TikTok oficial.
               </p>
             </div>
 
-            <div>
-              <h4 className="footer-title">Horarios de Atención</h4>
-              <p className="faint small">Lunes a Sábado: 9:00 AM - 9:00 PM</p>
-              <p className="faint small mt-4">Domingos y Festivos: 10:00 AM - 6:00 PM</p>
-              <p className="faint small mt-8" style={{ color: 'var(--green)' }}>✓ Atención con cita previa o por orden de llegada</p>
-            </div>
-
-            <div>
-              <h4 className="footer-title">Nuestras Redes Sociales</h4>
-              <div className="row wrap" style={{ gap: 10 }}>
-                <a href={REDES_SOCIALES.instagram} target="_blank" rel="noopener noreferrer" className="social-pill ig">
-                  <Icon name="instagram" size={16} /> @elitebarberstudio
-                </a>
-                <a href={REDES_SOCIALES.tiktok} target="_blank" rel="noopener noreferrer" className="social-pill tk">
-                  <Icon name="tiktok" size={16} /> TikTok
-                </a>
-                <a href={REDES_SOCIALES.whatsapp} target="_blank" rel="noopener noreferrer" className="social-pill wa">
-                  <Icon name="whatsapp" size={16} /> WhatsApp Oficial
-                </a>
-              </div>
+            <div className="row" style={{ gap: 10 }}>
+              <a href={REDES_SOCIALES.facebook} target="_blank" rel="noreferrer" className="social-pill-btn fb">
+                <Icon name="facebook" size={16} /> Facebook
+              </a>
+              <a href={REDES_SOCIALES.whatsapp} target="_blank" rel="noreferrer" className="social-pill-btn wa">
+                <Icon name="smartphone" size={16} /> WhatsApp
+              </a>
+              <a href={REDES_SOCIALES.instagram} target="_blank" rel="noreferrer" className="social-pill-btn ig">
+                <Icon name="instagram" size={16} /> Instagram
+              </a>
+              <a href={REDES_SOCIALES.tiktok} target="_blank" rel="noreferrer" className="social-pill-btn tk">
+                <Icon name="video" size={16} /> TikTok
+              </a>
             </div>
           </div>
 
-          <div className="landing-footer-bottom row-between wrap">
-            <span className="faint small">
-              © {new Date().getFullYear()} {catalogo.barberia?.nombre || 'Elite Barber Studio'}. Todos los derechos reservados.
-            </span>
+          <div className="revolution-grid-3">
+            {cortesCejasInferiores.map((corte) => (
+              <div key={corte.id} className="revolution-cut-card">
+                <div className="cut-image-wrapper">
+                  <img
+                    src={corte.imagen}
+                    alt={corte.nombre}
+                    className="cut-image"
+                    loading="lazy"
+                  />
+                </div>
+                <div className="cut-info">
+                  <h3 className="cut-title">{corte.nombre}</h3>
+                  <div className="cut-price">{money(corte.precio)}</div>
+                  <button
+                    type="button"
+                    className="cut-btn-reservar"
+                    onClick={() => iniciarReservaCorte(corte)}
+                  >
+                    Reservar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </main>
 
-            {/* Enlace discreto a login de administración */}
-            <Link to="/login" className="faint small landing-footer-admin-link">
-              <Icon name="lock" size={12} /> Panel de Administración (Dueña)
+      {/* ========================================================= */}
+      {/* FOOTER OFICIAL CON DATOS DE CAJICÁ                        */}
+      {/* ========================================================= */}
+      <footer className="revolution-footer" id="contacto">
+        <div className="container revolution-footer-grid">
+          <div>
+            <div className="brand-text mb-8">
+              <span className="brand-script">Barber</span>
+              <span className="brand-revolution">Revolution</span>
+            </div>
+            <p className="faint small" style={{ maxWidth: 320, lineHeight: 1.6 }}>
+              {NEGOCIO_INFO.slogan}. La mejor atención para caballeros y damas en Cajicá.
+            </p>
+            <div className="mt-12 faint small">
+              📍 {NEGOCIO_INFO.direccion}
+            </div>
+          </div>
+
+          <div>
+            <div className="footer-title">Redes Oficiales</div>
+            <div className="col" style={{ gap: 8 }}>
+              <a href={REDES_SOCIALES.instagram} target="_blank" rel="noreferrer" className="footer-link">
+                Instagram: @barbersrevolution
+              </a>
+              <a href={REDES_SOCIALES.tiktok} target="_blank" rel="noreferrer" className="footer-link">
+                TikTok: @barbers.revolution
+              </a>
+              <a href={REDES_SOCIALES.facebook} target="_blank" rel="noreferrer" className="footer-link">
+                Facebook: Barbers Revolution
+              </a>
+              <a href={REDES_SOCIALES.whatsapp} target="_blank" rel="noreferrer" className="footer-link">
+                WhatsApp: {REDES_SOCIALES.telefono}
+              </a>
+            </div>
+          </div>
+
+          <div>
+            <div className="footer-title">Acceso al Software</div>
+            <p className="faint small mb-12">
+              Panel exclusivo de la administradora para control de caja, arqueo en tiempo real y corte de los sábados.
+            </p>
+            <Link to="/login" className="btn btn-outline btn-sm" style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}>
+              🔐 Acceso Administradora
             </Link>
           </div>
         </div>
+
+        <div className="container revolution-footer-bottom text-center faint small">
+          © {new Date().getFullYear()} Barber's Revolution · Centro Comercial Sexta Avenida, Cajicá. Todos los derechos reservados.
+        </div>
       </footer>
+
+      {/* ========================================================= */}
+      {/* MODAL DE RESERVA EN TIEMPO REAL CON CALENDARIO            */}
+      {/* ========================================================= */}
+      <Modal
+        open={modalReserva}
+        onClose={() => setModalReserva(false)}
+        title={corteSeleccionado ? `Agendar: ${corteSeleccionado.nombre}` : 'Reserva de Cita'}
+        subtitle={corteSeleccionado ? `Precio: ${money(corteSeleccionado.precio)} · Duración estimada: ${corteSeleccionado.duracion || 30} min` : ''}
+        size="lg"
+      >
+        {corteSeleccionado && (
+          <div className="stack" style={{ gap: 20 }}>
+            {/* Encabezado del corte seleccionado */}
+            <div
+              style={{
+                background: 'var(--surface-hover)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)',
+                padding: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+              }}
+            >
+              <img
+                src={corteSeleccionado.imagen}
+                alt={corteSeleccionado.nombre}
+                style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8 }}
+              />
+              <div className="grow">
+                <strong style={{ fontSize: 16 }}>{corteSeleccionado.nombre}</strong>
+                <div className="gold-text mono font-bold" style={{ fontSize: 18 }}>
+                  {money(corteSeleccionado.precio)}
+                </div>
+              </div>
+              {pasoReserva > 1 && pasoReserva < 4 && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setPasoReserva(pasoReserva - 1)}
+                >
+                  ← Paso anterior
+                </button>
+              )}
+            </div>
+
+            {/* PASO 1: ELEGIR AL BARBERO CON SUS FOTOS */}
+            {pasoReserva === 1 && (
+              <div>
+                <label className="form-label" style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>
+                  1. Elige con qué barbero deseas atenderte:
+                </label>
+
+                {barberosDisponibles.length === 0 ? (
+                  <div className="loader-screen" style={{ minHeight: '150px' }}>
+                    <Spinner />
+                  </div>
+                ) : (
+                  <div className="reserva-modal-staff-grid">
+                    {barberosDisponibles.map((barbero) => {
+                      const h = getEmpleadoHorario(barbero)
+                      return (
+                        <div
+                          key={barbero.id}
+                          className="reserva-modal-staff-card"
+                          onClick={() => {
+                            setBarberoSeleccionado(barbero)
+                            setPasoReserva(2)
+                          }}
+                        >
+                          <Avatar nombre={barbero.nombre} area="barberia" size="lg" />
+                          <div style={{ textAlign: 'center', marginTop: 10 }}>
+                            <strong style={{ fontSize: 15, display: 'block' }}>{barbero.nombre}</strong>
+                            <span className="badge badge-gold no-dot mt-6" style={{ fontSize: 11 }}>
+                              Barbero Profesional
+                            </span>
+                            <div className="faint small mt-4" style={{ fontSize: 11 }}>
+                              🏖️ Descansa: {h.diaNombre}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm w-full mt-12"
+                            style={{ justifyContent: 'center' }}
+                          >
+                            Elegir a {barbero.nombre.split(' ')[0]}
+                          </button>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* PASO 2: CALENDARIO SINCRONIZADO EN TIEMPO REAL */}
+            {pasoReserva === 2 && barberoSeleccionado && (
+              <div>
+                <div className="row-between wrap mb-12" style={{ alignItems: 'center' }}>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: 15, margin: 0 }}>
+                    2. Selecciona Fecha y Hora con {barberoSeleccionado.nombre}:
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => setPasoReserva(1)}
+                  >
+                    Cambiar Barbero
+                  </button>
+                </div>
+
+                {/* Tira de Días del Calendario */}
+                <div className="reserva-days-strip mb-16">
+                  {diasDisponibles.map((dia) => {
+                    const seleccionado = sameDay(dia, fechaSeleccionada)
+                    const esHoy = sameDay(dia, new Date())
+                    const dow = dia.toLocaleDateString('es-CO', { weekday: 'short' })
+                    const descanso = esDiaDescanso(barberoSeleccionado, dia)
+
+                    return (
+                      <button
+                        key={dia.toISOString()}
+                        type="button"
+                        className={`day-btn ${seleccionado ? 'selected' : ''} ${descanso ? 'day-descanso' : ''}`}
+                        onClick={() => {
+                          setFechaSeleccionada(dia)
+                          setHoraSeleccionada(null)
+                        }}
+                      >
+                        <span className="day-name">{esHoy ? 'Hoy' : dow}</span>
+                        <span className="day-number">{dia.getDate()}</span>
+                        {descanso && <span className="day-tag-descanso">Descanso</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Horas Disponibles en Tiempo Real */}
+                {esDiaDescanso(barberoSeleccionado, fechaSeleccionada) ? (
+                  <div
+                    style={{
+                      padding: 24,
+                      textAlign: 'center',
+                      background: 'rgba(234, 179, 8, 0.08)',
+                      border: '1px solid rgba(234, 179, 8, 0.3)',
+                      borderRadius: 'var(--radius)',
+                    }}
+                  >
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>🏖️</div>
+                    <strong style={{ color: 'var(--amber)', fontSize: 16 }}>
+                      {barberoSeleccionado.nombre} descansa los {getEmpleadoHorario(barberoSeleccionado).diaNombre}
+                    </strong>
+                    <p className="faint small mt-6">
+                      Por favor selecciona otro día en la barra superior o elige a otro de nuestros barberos disponibles.
+                    </p>
+                  </div>
+                ) : cargandoSlots ? (
+                  <div className="loader-screen" style={{ minHeight: '120px' }}>
+                    <Spinner />
+                  </div>
+                ) : slotsDisponibles.length === 0 ? (
+                  <Empty icon="clock" title="Sin turnos disponibles para esta fecha">
+                    {barberoSeleccionado.nombre} tiene su agenda completa para este día. Por favor prueba otra fecha.
+                  </Empty>
+                ) : (
+                  <div>
+                    <label className="form-label small mb-8">Horas libres disponibles:</label>
+                    <div className="reserva-slots-grid">
+                      {slotsDisponibles.map((slotIso) => {
+                        const seleccionado = horaSeleccionada === slotIso
+                        return (
+                          <button
+                            key={slotIso}
+                            type="button"
+                            className={`slot-btn ${seleccionado ? 'selected' : ''}`}
+                            onClick={() => {
+                              setHoraSeleccionada(slotIso)
+                              setPasoReserva(3) // Avanzar al paso de datos
+                            }}
+                          >
+                            <Icon name="clock" size={14} />
+                            <span>{hora(slotIso)}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* PASO 3: DATOS DEL CLIENTE (NOMBRE Y CELULAR) */}
+            {pasoReserva === 3 && (
+              <form onSubmit={handleConfirmarCita} className="stack" style={{ gap: 16 }}>
+                <div className="receipt">
+                  <div className="receipt-row">
+                    <span className="muted">Corte:</span>
+                    <strong>{corteSeleccionado.nombre}</strong>
+                  </div>
+                  <div className="receipt-row">
+                    <span className="muted">Barbero:</span>
+                    <strong>{barberoSeleccionado?.nombre}</strong>
+                  </div>
+                  <div className="receipt-row">
+                    <span className="muted">Horario:</span>
+                    <strong className="gold-text">
+                      {fechaCorta(fechaSeleccionada)} · {hora(horaSeleccionada)}
+                    </strong>
+                  </div>
+                  <div className="receipt-row total">
+                    <span>Precio:</span>
+                    <span className="gold-text mono font-bold">{money(corteSeleccionado.precio)}</span>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label required">Tu Nombre Completo</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Ej: Juan David Pérez"
+                    value={clienteNombre}
+                    onChange={(e) => setClienteNombre(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label required">📱 Celular / WhatsApp</label>
+                  <input
+                    type="tel"
+                    className="form-control"
+                    placeholder="Ej: 312 456 7890"
+                    value={clienteTelefono}
+                    onChange={(e) => setClienteTelefono(e.target.value)}
+                    required
+                  />
+                  <span className="form-hint">
+                    Te enviaremos la confirmación directa a tu WhatsApp.
+                  </span>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Notas o Indicaciones (Opcional)</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Ej: Fade bajo, diseño de línea al lado..."
+                    value={clienteNotas}
+                    onChange={(e) => setClienteNotas(e.target.value)}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-lg"
+                  style={{ width: '100%', justifyContent: 'center', fontSize: 16, height: 48 }}
+                  disabled={enviandoCita}
+                >
+                  {enviandoCita ? <Spinner size="sm" /> : <Icon name="check" size={18} />}{' '}
+                  Confirmar Mi Cita en Barber's Revolution
+                </button>
+              </form>
+            )}
+
+            {/* PASO 4: PANTALLA DE ÉXITO Y ENVÍO A WHATSAPP */}
+            {pasoReserva === 4 && (
+              <div className="text-center stack" style={{ gap: 16, padding: '10px 0' }}>
+                <div style={{ fontSize: 48 }}>🎉</div>
+                <h3 style={{ fontSize: 20, fontWeight: 700, color: 'var(--gold)', margin: 0 }}>
+                  ¡Tu Cita fue Apartada Exitosamente!
+                </h3>
+                <p className="faint small" style={{ maxWidth: 440, margin: '0 auto' }}>
+                  Tu turno con <strong>{barberoSeleccionado?.nombre}</strong> para el{' '}
+                  <strong>{fechaCorta(fechaSeleccionada)} a las {hora(horaSeleccionada)}</strong> quedó agendado.
+                </p>
+
+                <div className="receipt mt-8" style={{ textAlign: 'left' }}>
+                  <div className="receipt-row">
+                    <span className="muted">Cliente:</span>
+                    <strong>{clienteNombre}</strong>
+                  </div>
+                  <div className="receipt-row">
+                    <span className="muted">Servicio:</span>
+                    <span>{corteSeleccionado?.nombre}</span>
+                  </div>
+                  <div className="receipt-row">
+                    <span className="muted">Valor a pagar en barbería:</span>
+                    <strong className="gold-text mono">{money(corteSeleccionado?.precio)}</strong>
+                  </div>
+                </div>
+
+                <div className="stack" style={{ gap: 10, marginTop: 12 }}>
+                  <a
+                    href={generarWhatsAppConfirmacion()}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn btn-primary btn-lg"
+                    style={{
+                      background: 'linear-gradient(135deg, #25D366, #128C7E)',
+                      borderColor: '#128C7E',
+                      color: '#fff',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Icon name="smartphone" size={20} /> Enviar Confirmación por WhatsApp
+                  </a>
+
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => setModalReserva(false)}
+                  >
+                    Listo, Salir
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
